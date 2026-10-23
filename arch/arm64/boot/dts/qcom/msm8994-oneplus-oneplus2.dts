@@ -187,6 +187,9 @@
 };
 
 &dsi0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
 	vdda-supply = <&vreg_l2a_1p25>;
 	vddio-supply = <&vreg_l14a_1p8>;
 	status = "okay";
