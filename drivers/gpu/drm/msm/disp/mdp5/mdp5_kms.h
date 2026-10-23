@@ -158,6 +158,9 @@ struct mdp5_interface {
 	int num; /* display interface number */
 	enum mdp5_intf_type type;
 	enum mdp5_intf_mode mode;
+
+	/* the next DSI interface has an encoder: dual LM is possible */
+	bool dsi_slave_present;
 };
 
 static inline bool mdp5_cmd_dual_lm(const struct mdp5_cfg_hw *hw,
@@ -173,6 +176,9 @@ static inline bool mdp5_cmd_dual_lm(const struct mdp5_cfg_hw *hw,
 	if (intf->num < 1 || intf->num >= 3)
 		return false;
 	if (hw->intf.connect[intf->num + 1] != INTF_DSI)
+		return false;
+	/* single DSI command mode panels (e.g. OnePlus 2) use one LM */
+	if (!intf->dsi_slave_present)
 		return false;
 	return true;
 }

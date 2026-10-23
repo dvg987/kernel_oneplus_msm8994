@@ -376,6 +376,19 @@ static int modeset_init_intf(struct mdp5_kms *mdp5_kms,
 	return ret;
 }
 
+static bool mdp5_kms_has_dsi_encoder(struct drm_device *dev, int num)
+{
+	struct drm_encoder *encoder;
+
+	drm_for_each_encoder(encoder, dev) {
+		struct mdp5_encoder *e = to_mdp5_encoder(encoder);
+
+		if (e->intf && e->intf->type == INTF_DSI && e->intf->num == num)
+			return true;
+	}
+	return false;
+}
+
 static int modeset_init(struct mdp5_kms *mdp5_kms)
 {
 	struct drm_device *dev = mdp5_kms->dev;
@@ -399,6 +412,14 @@ static int modeset_init(struct mdp5_kms *mdp5_kms)
 	num_encoders = 0;
 	drm_for_each_encoder(encoder, dev)
 		num_encoders++;
+
+	for (i = 0; i < mdp5_kms->num_intfs; i++) {
+		struct mdp5_interface *intf = mdp5_kms->intfs[i];
+
+		if (intf->type == INTF_DSI)
+			intf->dsi_slave_present =
+				mdp5_kms_has_dsi_encoder(dev, intf->num + 1);
+	}
 
 	/*
 	 * We should ideally have less number of encoders (set up by parsing
