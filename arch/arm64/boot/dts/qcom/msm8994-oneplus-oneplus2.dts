@@ -222,7 +222,6 @@
 };
 
 &pmi8994_wled {
-	qcom,num-strings = <2>;
 	qcom,enabled-strings = <0 1>;
 	qcom,current-limit-microamp = <20000>;
 	qcom,ovp-millivolt = <29500>;
