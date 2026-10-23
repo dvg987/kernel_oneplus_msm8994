@@ -193,8 +193,14 @@ static inline void validate_fs_switch(struct fs_struct *old_fs)
 	if (old_fs != userspace_init_fs)
 		return;
 	pr_warn("VFS: Pid 1 stopped sharing filesystem state\n");
-	set_fs_root(userspace_init_fs, &init_fs.root);
-	set_fs_pwd(userspace_init_fs, &init_fs.root);
+	/*
+	 * ANDROID: Android's init unshares its mount namespace (bootstrap and
+	 * default namespaces) after it has started threads, the property
+	 * service among them, that keep using this fs_struct.  Reverting it
+	 * to nullfs leaves them without a root: every property set fails its
+	 * SELinux check and boot stops.  Keep the stale state, as older
+	 * kernels did.
+	 */
 }
 
 struct fs_struct *switch_fs_struct(struct fs_struct *new_fs)
