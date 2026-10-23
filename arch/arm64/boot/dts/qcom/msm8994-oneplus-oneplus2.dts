@@ -63,12 +63,14 @@
 			no-map;
 		};
 
+		/* the layout the OnePlus 2 kernels and TWRP use, so each reads the other */
 		ramoops@ac000000 {
 			compatible = "ramoops";
 			reg = <0 0xac000000 0 0x100000>;
+			record-size = <0x1000>;
 			console-size = <0x40000>;
-			record-size = <0x10000>;
-			pmsg-size = <0x80000>;
+			ftrace-size = <0x1000>;
+			pmsg-size = <0x1000>;
 		};
 
 		param_mem: memory@ac200000 {
