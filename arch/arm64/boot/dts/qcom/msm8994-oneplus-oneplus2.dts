@@ -344,6 +344,8 @@
 		vreg_l6a_1p8: l6 {
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
+			/* USB HS PHY vdda18: no PHY driver claims it yet */
+			regulator-always-on;
 		};
 
 		vreg_l8a_1p8: l8 {
@@ -433,6 +435,8 @@
 		vreg_l24a_3p075: l24 {
 			regulator-min-microvolt = <3075000>;
 			regulator-max-microvolt = <3150000>;
+			/* USB HS PHY vdda33: no PHY driver claims it yet */
+			regulator-always-on;
 		};
 
 		vreg_l25a_1p0: l25 {
