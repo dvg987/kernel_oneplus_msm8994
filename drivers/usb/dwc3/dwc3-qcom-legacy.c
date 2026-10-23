@@ -26,6 +26,20 @@
 
 /* USB QSCRATCH Hardware registers */
 #define QSCRATCH_HS_PHY_CTRL			0x10
+#define RETENABLEN				BIT(1)
+#define VBUSVLDEXT0				BIT(13)
+#define USB2_UTMI_CLK_EN			BIT(21)
+#define CLAMP_MPM_DPSE_DMSE_EN_N		BIT(26)
+
+#define QSCRATCH_PARAMETER_OVERRIDE_X		0x14
+
+#define QSCRATCH_HS_PHY_CTRL_COMMON		0xec
+#define COMMON_RETENABLEN			BIT(3)
+#define COMMON_FSEL_DEFAULT			(0x3 << 4)
+#define COMMON_COMMONONN			BIT(7)
+#define COMMON_OTGTUNE0_DEFAULT			(0x4 << 8)
+#define COMMON_OTGDISABLE0			BIT(11)
+#define COMMON_VBUSVLDEXTSEL0			BIT(12)
 #define UTMI_OTG_VBUS_VALID			BIT(20)
 #define SW_SESSVLD_SEL				BIT(28)
 
@@ -73,6 +87,7 @@ struct dwc3_qcom_port {
 struct dwc3_qcom {
 	struct device		*dev;
 	void __iomem		*qscratch_base;
+	bool			qscratch_hs_phy;
 	struct platform_device	*dwc3;
 	struct clk		**clks;
 	int			num_clocks;
@@ -116,8 +131,53 @@ static inline void dwc3_qcom_clrbits(void __iomem *base, u32 offset, u32 val)
 	readl(base + offset);
 }
 
+/*
+ * MSM8994: the 28 nm HS PHY sits behind QSCRATCH and has no PHY driver.
+ * Bring it up as the vendor kernel's msm_hsphy_init() does: UTMI clock,
+ * clamps, retention off, the common block, and the board's parameter
+ * override (VBUS/disconnect thresholds, DC level, pre-emphasis).
+ */
+static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
+{
+	void __iomem *base = qcom->qscratch_base;
+	u32 init, reg;
+
+	dwc3_qcom_setbits(base, QSCRATCH_HS_PHY_CTRL, USB2_UTMI_CLK_EN |
+			  CLAMP_MPM_DPSE_DMSE_EN_N | RETENABLEN);
+	usleep_range(2000, 2200);
+
+	dwc3_qcom_setbits(base, QSCRATCH_HS_PHY_CTRL_COMMON,
+			  COMMON_OTGDISABLE0 | COMMON_OTGTUNE0_DEFAULT |
+			  COMMON_COMMONONN | COMMON_FSEL_DEFAULT |
+			  COMMON_RETENABLEN);
+
+	if (!device_property_read_u32(qcom->dev, "qcom,hsphy-init", &init)) {
+		reg = readl(base + QSCRATCH_PARAMETER_OVERRIDE_X);
+		reg = (reg & ~0x03ffffff) | (init & 0x03ffffff);
+		writel(reg, base + QSCRATCH_PARAMETER_OVERRIDE_X);
+		readl(base + QSCRATCH_PARAMETER_OVERRIDE_X);
+	}
+}
+
 static void dwc3_qcom_vbus_override_enable(struct dwc3_qcom *qcom, bool enable)
 {
+	/*
+	 * Boards whose PHY does not see VBUS: drive VBUS valid from the
+	 * external input, which also enables the D+ pull-up.
+	 */
+	if (qcom->qscratch_hs_phy) {
+		if (enable) {
+			dwc3_qcom_setbits(qcom->qscratch_base,
+					  QSCRATCH_HS_PHY_CTRL_COMMON,
+					  COMMON_VBUSVLDEXTSEL0);
+			dwc3_qcom_setbits(qcom->qscratch_base,
+					  QSCRATCH_HS_PHY_CTRL, VBUSVLDEXT0);
+		} else {
+			dwc3_qcom_clrbits(qcom->qscratch_base,
+					  QSCRATCH_HS_PHY_CTRL, VBUSVLDEXT0);
+		}
+	}
+
 	if (enable) {
 		dwc3_qcom_setbits(qcom->qscratch_base, QSCRATCH_SS_PHY_CTRL,
 				  LANE0_PWR_PRESENT);
@@ -792,6 +852,11 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
 				"qcom,select-utmi-as-pipe-clk");
 	if (ignore_pipe_clk)
 		dwc3_qcom_select_utmi_clk(qcom);
+
+	qcom->qscratch_hs_phy = of_device_is_compatible(dev->of_node,
+							 "qcom,msm8994-dwc3");
+	if (qcom->qscratch_hs_phy)
+		dwc3_qcom_qscratch_hs_phy_init(qcom);
 
 	ret = dwc3_qcom_of_register_core(pdev);
 	if (ret) {

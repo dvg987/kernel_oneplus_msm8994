@@ -504,6 +504,8 @@
 };
 
 &usb3 {
+	/* HS PHY tuning, as the stock device tree sets it */
+	qcom,hsphy-init = <0xd187a7>;
 	status = "okay";
 };
 
