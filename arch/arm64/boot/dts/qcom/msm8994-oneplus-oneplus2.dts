@@ -47,6 +47,15 @@
 	};
 
 	reserved-memory {
+		/*
+		 * The TZ has no PSCI: lk2nd starts the secondary CPUs and parks
+		 * them here (spin-table), in RAM no bootloader loads into.
+		 */
+		spin-table@6100000 {
+			reg = <0 0x06100000 0 0x1000>;
+			no-map;
+		};
+
 		nvbackup_mem: memory@6200000 {
 			reg = <0 0x06200000 0 0x100000>;
 			no-map;
@@ -505,4 +514,79 @@
 	non-removable;
 	bus-width = <8>;
 	status = "okay";
+};
+
+/* Per-CPU ACC (power control) that lk2nd uses to start the cores */
+&cpu0 {
+	qcom,acc = <&cpu0_acc>;
+};
+
+&cpu1 {
+	qcom,acc = <&cpu1_acc>;
+};
+
+&cpu2 {
+	qcom,acc = <&cpu2_acc>;
+};
+
+&cpu3 {
+	qcom,acc = <&cpu3_acc>;
+};
+
+&cpu4 {
+	qcom,acc = <&cpu4_acc>;
+};
+
+&cpu5 {
+	qcom,acc = <&cpu5_acc>;
+};
+
+&cpu6 {
+	qcom,acc = <&cpu6_acc>;
+};
+
+&cpu7 {
+	qcom,acc = <&cpu7_acc>;
+};
+
+&soc {
+	cpu0_acc: power-manager@f908b000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf908b000 0x1000>;
+	};
+
+	cpu1_acc: power-manager@f909b000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf909b000 0x1000>;
+	};
+
+	cpu2_acc: power-manager@f90ab000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf90ab000 0x1000>;
+	};
+
+	cpu3_acc: power-manager@f90bb000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf90bb000 0x1000>;
+	};
+
+	cpu4_acc: power-manager@f90cb000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf90cb000 0x1000>;
+	};
+
+	cpu5_acc: power-manager@f90db000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf90db000 0x1000>;
+	};
+
+	cpu6_acc: power-manager@f90eb000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf90eb000 0x1000>;
+	};
+
+	cpu7_acc: power-manager@f90fb000 {
+		compatible = "qcom,msm8994-acc";
+		reg = <0xf90fb000 0x1000>;
+	};
 };
