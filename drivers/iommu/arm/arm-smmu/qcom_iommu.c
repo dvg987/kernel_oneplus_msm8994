@@ -457,7 +457,7 @@ static void qcom_iommu_program_ctx(struct qcom_iommu_dev *qcom_iommu,
 
 static int qcom_iommu_init_domain(struct iommu_domain *domain,
 				  struct qcom_iommu_dev *qcom_iommu,
-				  struct device *dev)
+				  struct device *dev, bool hw)
 {
 	struct qcom_iommu_domain *qcom_domain = to_qcom_iommu_domain(domain);
 	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
@@ -506,7 +506,7 @@ static int qcom_iommu_init_domain(struct iommu_domain *domain,
 	for (i = 0; i < fwspec->num_ids; i++) {
 		struct qcom_iommu_ctx *ctx = to_ctx(qcom_domain, fwspec->ids[i]);
 
-		if (!qcom_iommu->non_secure && !ctx->secure_init) {
+		if (hw && !qcom_iommu->non_secure && !ctx->secure_init) {
 			ret = qcom_scm_restore_sec_cfg(qcom_iommu->sec_id, ctx->asid);
 			if (ret) {
 				dev_err(qcom_iommu->dev, "secure init failed: %d\n", ret);
@@ -554,7 +554,9 @@ static int qcom_iommu_init_domain(struct iommu_domain *domain,
 
 		ctx->sctlr = reg;
 
-		qcom_iommu_program_ctx(qcom_iommu, ctx);
+		/* unpowered: programmed by the next resume (ctx_restore) */
+		if (hw)
+			qcom_iommu_program_ctx(qcom_iommu, ctx);
 
 		ctx->domain = domain;
 	}
@@ -617,6 +619,7 @@ static int qcom_iommu_attach_dev(struct iommu_domain *domain,
 {
 	struct qcom_iommu_dev *qcom_iommu = dev_iommu_priv_get(dev);
 	struct qcom_iommu_domain *qcom_domain = to_qcom_iommu_domain(domain);
+	bool hw;
 	int ret;
 
 	if (!qcom_iommu) {
@@ -624,10 +627,19 @@ static int qcom_iommu_attach_dev(struct iommu_domain *domain,
 		return -ENXIO;
 	}
 
-	/* Ensure that the domain is finalized */
-	pm_runtime_get_sync(qcom_iommu->dev);
-	ret = qcom_iommu_init_domain(domain, qcom_iommu, dev);
-	pm_runtime_put_sync(qcom_iommu->dev);
+	/*
+	 * Ensure that the domain is finalized.  The MSM8994 GPU SMMU cannot
+	 * resume before the GPU has turned GX on (its TBU clock is in GX):
+	 * programming it or calling TZ for it then hangs the SoC.  Set the
+	 * domain up in memory only; resume restores the context banks.
+	 */
+	ret = pm_runtime_resume_and_get(qcom_iommu->dev);
+	if (ret < 0 && !(qcom_iommu->cfg && qcom_iommu->cfg->ctx_restore))
+		return ret;
+	hw = ret >= 0;
+	ret = qcom_iommu_init_domain(domain, qcom_iommu, dev, hw);
+	if (hw)
+		pm_runtime_put_sync(qcom_iommu->dev);
 	if (ret < 0)
 		return ret;
 
