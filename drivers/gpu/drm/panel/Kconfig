@@ -412,6 +412,16 @@ config DRM_PANEL_JADARD_JD9365DA_H3
 	  WXGA MIPI DSI panel. The panel support TFT dot matrix LCD with
 	  800RGBx1280 dots at maximum.
 
+config DRM_PANEL_JDI_JD35695
+	tristate "JDI JD35695 1080p command mode DSI panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for the JDI JD35695
+	  1080x1920 command mode DSI panel (Novatek NT35695) of the
+	  OnePlus 2.
+
 config DRM_PANEL_JDI_LPM102A188A
 	tristate "JDI LPM102A188A DSI panel"
 	depends on GPIOLIB
