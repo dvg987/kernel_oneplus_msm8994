@@ -180,6 +180,27 @@
 	};
 };
 
+&pmi8994_spmi_regulators {
+	/*
+	 * S2 (ganged with S3) is VDD_GFX, the GX GDSC's parent supply in the
+	 * stock device tree (pmi8994_s2_corner).  Without it the GPU's GX
+	 * clocks never turn on and its IOMMU hangs the bus at probe.
+	 */
+	vdd_gfx: s2 {
+		regulator-min-microvolt = <980000>;
+		regulator-max-microvolt = <980000>;
+	};
+};
+
+&mmcc {
+	vdd-gfx-supply = <&vdd_gfx>;
+};
+
+&ocmem {
+	compatible = "qcom,msm8994-ocmem";
+	vdd-gfx-supply = <&vdd_gfx>;
+};
+
 &gpu {
 	status = "okay";
 };
