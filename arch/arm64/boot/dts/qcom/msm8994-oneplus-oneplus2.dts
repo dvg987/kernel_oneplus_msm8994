@@ -106,6 +106,36 @@
 		regulator-boot-on;
 	};
 
+	gpio-keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		key-volume-up {
+			label = "volume_up";
+			gpios = <&pm8994_gpios 3 GPIO_ACTIVE_LOW>;
+			linux,input-type = <EV_KEY>;
+			linux,code = <KEY_VOLUMEUP>;
+			debounce-interval = <15>;
+		};
+
+		key-volume-down {
+			label = "volume_down";
+			gpios = <&pm8994_gpios 2 GPIO_ACTIVE_LOW>;
+			linux,input-type = <EV_KEY>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			debounce-interval = <15>;
+		};
+
+		event-hall-sensor {
+			label = "hall_sensor";
+			gpios = <&tlmm 75 GPIO_ACTIVE_LOW>;
+			linux,input-type = <EV_SW>;
+			linux,code = <SW_LID>;
+			debounce-interval = <15>;
+			wakeup-source;
+		};
+	};
+
 	vph_pwr_bbyp: vph-pwr-bbyp-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vph_pwr_bbyp";
@@ -120,8 +150,84 @@
 	status = "okay";
 };
 
+&blsp1_i2c2 {
+	status = "okay";
+
+	/* Synaptics S3320, RMI4 */
+	touchscreen@20 {
+		compatible = "syna,rmi4-i2c";
+		reg = <0x20>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		interrupts-extended = <&tlmm 96 IRQ_TYPE_LEVEL_LOW>;
+		reset-gpios = <&tlmm 31 GPIO_ACTIVE_LOW>;
+		vdd-supply = <&vreg_l22a_3p0>;
+
+		syna,startup-delay-ms = <100>;
+
+		rmi4-f01@1 {
+			reg = <0x01>;
+			syna,nosleep-mode = <1>;
+		};
+
+		rmi4-f12@12 {
+			reg = <0x12>;
+			syna,sensor-type = <1>;
+		};
+	};
+};
+
+&gpu {
+	status = "okay";
+};
+
+&mdss {
+	status = "okay";
+};
+
+&dsi0 {
+	vdda-supply = <&vreg_l2a_1p25>;
+	vddio-supply = <&vreg_l14a_1p8>;
+	status = "okay";
+
+	panel@0 {
+		compatible = "jdi,jd35695";
+		reg = <0>;
+
+		backlight = <&pmi8994_wled>;
+		vddio-supply = <&vreg_l14a_1p8>;
+		reset-gpios = <&tlmm 78 GPIO_ACTIVE_LOW>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&dsi0_out>;
+			};
+		};
+	};
+};
+
+&dsi0_out {
+	remote-endpoint = <&panel_in>;
+	data-lanes = <0 1 2 3>;
+};
+
+&dsi0_phy {
+	status = "okay";
+};
+
 &pm8994_resin {
 	linux,code = <KEY_VOLUMEDOWN>;
+	status = "okay";
+};
+
+&pmi8994_wled {
+	qcom,num-strings = <2>;
+	qcom,enabled-strings = <0 1>;
+	qcom,current-limit-microamp = <20000>;
+	qcom,ovp-millivolt = <29500>;
+	qcom,switching-freq = <800>;
+	qcom,cabc;
 	status = "okay";
 };
 
@@ -357,6 +463,15 @@
 			regulator-max-microvolt = <3600000>;
 		};
 	};
+};
+
+&usb3 {
+	status = "okay";
+};
+
+&usb3_dwc3 {
+	dr_mode = "peripheral";
+	maximum-speed = "high-speed";
 };
 
 &sdhc1 {
