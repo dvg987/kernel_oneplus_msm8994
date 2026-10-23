@@ -1,0 +1,368 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * OnePlus 2 (oneplus2, project 14049), MSM8994 v2.1.
+ *
+ * The memory map, regulator voltages and peripherals follow the stock
+ * OxygenOS 3.10 device tree (board-id 14) and what the stock kernel logs on
+ * the phone.
+ */
+
+/dts-v1/;
+
+#include "msm8994.dtsi"
+#include "pm8994.dtsi"
+#include "pmi8994.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/gpio-keys.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/* placed as the stock kernel places them */
+/delete-node/ &audio_mem;
+/delete-node/ &adsp_mem;
+
+/ {
+	model = "OnePlus 2";
+	compatible = "oneplus,oneplus2", "qcom,msm8994";
+	chassis-type = "handset";
+
+	/* the stock LK picks its DTB by these */
+	qcom,msm-id = <207 0x20001>;
+	qcom,board-id = <8 0 14049 14>;
+
+	aliases {
+		serial0 = &blsp1_uart2;
+		mmc0 = &sdhc1;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	/* LK rewrites the banks from SMEM; these are the 4 GB phone's */
+	memory@0 {
+		device_type = "memory";
+		reg = <0 0x00000000 0 0x80000000>,
+		      <0 0x80000000 0 0x78000000>;
+	};
+
+	reserved-memory {
+		nvbackup_mem: memory@6200000 {
+			reg = <0 0x06200000 0 0x100000>;
+			no-map;
+		};
+
+		/* holds SMEM (0x6a00000) and the hypervisor (0x6c00000) */
+		memory_hole: memory@6300000 {
+			reg = <0 0x06300000 0 0x700000>;
+			no-map;
+		};
+
+		tzapp_mem: memory@e900000 {
+			reg = <0 0x0e900000 0 0x1900000>;
+			no-map;
+		};
+
+		ramoops@ac000000 {
+			compatible = "ramoops";
+			reg = <0 0xac000000 0 0x100000>;
+			console-size = <0x40000>;
+			record-size = <0x10000>;
+			pmsg-size = <0x80000>;
+		};
+
+		param_mem: memory@ac200000 {
+			reg = <0 0xac200000 0 0x100000>;
+			no-map;
+		};
+
+		mtp_mem: memory@ac400000 {
+			reg = <0 0xac400000 0 0x100000>;
+			no-map;
+		};
+
+		audio_mem: memory@df400000 {
+			reg = <0 0xdf400000 0 0x800000>;
+			no-map;
+		};
+
+		qseecom_mem: memory@dfc00000 {
+			reg = <0 0xdfc00000 0 0x1800000>;
+			no-map;
+		};
+
+		adsp_mem: memory@e1400000 {
+			reg = <0 0xe1400000 0 0x3f00000>;
+			no-map;
+		};
+	};
+
+	vph_pwr: vph-pwr-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vph_pwr";
+		regulator-min-microvolt = <3700000>;
+		regulator-max-microvolt = <3700000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vph_pwr_bbyp: vph-pwr-bbyp-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vph_pwr_bbyp";
+		regulator-min-microvolt = <3700000>;
+		regulator-max-microvolt = <3700000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+};
+
+&blsp1_uart2 {
+	status = "okay";
+};
+
+&pm8994_resin {
+	linux,code = <KEY_VOLUMEDOWN>;
+	status = "okay";
+};
+
+&rpm_requests {
+	pm8994_regulators: regulators-0 {
+		compatible = "qcom,rpm-pm8994-regulators";
+
+		vdd_s1-supply = <&vph_pwr>;
+		vdd_s2-supply = <&vph_pwr>;
+		vdd_s3-supply = <&vph_pwr>;
+		vdd_s4-supply = <&vph_pwr>;
+		vdd_s5-supply = <&vph_pwr>;
+		vdd_s6-supply = <&vph_pwr>;
+		vdd_s7-supply = <&vph_pwr>;
+		vdd_s8-supply = <&vph_pwr>;
+		vdd_s9-supply = <&vph_pwr>;
+		vdd_s10-supply = <&vph_pwr>;
+		vdd_s11-supply = <&vph_pwr>;
+		vdd_s12-supply = <&vph_pwr>;
+		vdd_l1-supply = <&vreg_s1b_1p025>;
+		vdd_l2_l26_l28-supply = <&vreg_s3a_1p3>;
+		vdd_l3_l11-supply = <&vreg_s3a_1p3>;
+		vdd_l4_l27_l31-supply = <&vreg_s3a_1p3>;
+		vdd_l5_l7-supply = <&vreg_s5a_2p15>;
+		vdd_l6_l12_l32-supply = <&vreg_s5a_2p15>;
+		vdd_l8_l16_l30-supply = <&vph_pwr>;
+		vdd_l9_l10_l18_l22-supply = <&vph_pwr_bbyp>;
+		vdd_l13_l19_l23_l24-supply = <&vph_pwr_bbyp>;
+		vdd_l14_l15-supply = <&vreg_s5a_2p15>;
+		vdd_l17_l29-supply = <&vph_pwr_bbyp>;
+		vdd_l20_l21-supply = <&vph_pwr_bbyp>;
+		vdd_l25-supply = <&vreg_s5a_2p15>;
+		vdd_lvs1_2-supply = <&vreg_s4a_1p8>;
+
+		/* S1, S2, S6 and S12 are RPMPD's; S8-S11 the CPUs' (SPMI) */
+
+		vreg_s3a_1p3: s3 {
+			regulator-min-microvolt = <1300000>;
+			regulator-max-microvolt = <1300000>;
+		};
+
+		vreg_s4a_1p8: s4 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+			regulator-always-on;
+			regulator-allow-set-load;
+			regulator-system-load = <325000>;
+		};
+
+		vreg_s5a_2p15: s5 {
+			regulator-min-microvolt = <2150000>;
+			regulator-max-microvolt = <2150000>;
+		};
+
+		vreg_s7a_1p0: s7 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+		};
+
+		vreg_l1a_1p0: l1 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+		};
+
+		vreg_l2a_1p25: l2 {
+			regulator-min-microvolt = <1250000>;
+			regulator-max-microvolt = <1250000>;
+		};
+
+		vreg_l3a_1p25: l3 {
+			regulator-min-microvolt = <1250000>;
+			regulator-max-microvolt = <1250000>;
+		};
+
+		vreg_l4a_1p225: l4 {
+			regulator-min-microvolt = <1225000>;
+			regulator-max-microvolt = <1225000>;
+		};
+
+		vreg_l6a_1p8: l6 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l8a_1p8: l8 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l9a_1p8: l9 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l10a_1p8: l10 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l11a_1p2: l11 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+		};
+
+		vreg_l12a_1p8: l12 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l13a_2p95: l13 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2950000>;
+		};
+
+		vreg_l14a_1p8: l14 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l15a_1p8: l15 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l16a_2p7: l16 {
+			regulator-min-microvolt = <2700000>;
+			regulator-max-microvolt = <2700000>;
+			regulator-always-on;
+		};
+
+		vreg_l17a_2p7: l17 {
+			regulator-min-microvolt = <2700000>;
+			regulator-max-microvolt = <2700000>;
+		};
+
+		vreg_l18a_2p85: l18 {
+			regulator-min-microvolt = <2850000>;
+			regulator-max-microvolt = <2850000>;
+		};
+
+		vreg_l19a_2p8: l19 {
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+		};
+
+		vreg_l20a_2p95: l20 {
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+			regulator-allow-set-load;
+			regulator-system-load = <570000>;
+		};
+
+		vreg_l21a_2p95: l21 {
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+			regulator-always-on;
+		};
+
+		vreg_l22a_3p0: l22 {
+			regulator-min-microvolt = <3000000>;
+			regulator-max-microvolt = <3000000>;
+		};
+
+		vreg_l23a_2p8: l23 {
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+		};
+
+		vreg_l24a_3p075: l24 {
+			regulator-min-microvolt = <3075000>;
+			regulator-max-microvolt = <3150000>;
+		};
+
+		vreg_l25a_1p0: l25 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+		};
+
+		vreg_l26a_0p9875: l26 {
+			regulator-min-microvolt = <987500>;
+			regulator-max-microvolt = <987500>;
+		};
+
+		vreg_l27a_1p05: l27 {
+			regulator-min-microvolt = <1050000>;
+			regulator-max-microvolt = <1050000>;
+		};
+
+		vreg_l28a_1p0: l28 {
+			regulator-min-microvolt = <1000000>;
+			regulator-max-microvolt = <1000000>;
+		};
+
+		vreg_l29a_2p8: l29 {
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+		};
+
+		vreg_l30a_1p8: l30 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_l31a_1p2: l31 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+		};
+
+		vreg_l32a_1p8: l32 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <1800000>;
+		};
+
+		vreg_lvs1a_1p8: lvs1 {};
+		vreg_lvs2a_1p8: lvs2 {};
+	};
+
+	pmi8994_regulators: regulators-1 {
+		compatible = "qcom,rpm-pmi8994-regulators";
+
+		vdd_s1-supply = <&vph_pwr>;
+		vdd_s2-supply = <&vph_pwr>;
+		vdd_s3-supply = <&vph_pwr>;
+		vdd_bst_byp-supply = <&vph_pwr>;
+
+		vreg_s1b_1p025: s1 {
+			regulator-min-microvolt = <1025000>;
+			regulator-max-microvolt = <1025000>;
+		};
+
+		vreg_bst_byp: boost-bypass {
+			regulator-min-microvolt = <3150000>;
+			regulator-max-microvolt = <3600000>;
+		};
+	};
+};
+
+&sdhc1 {
+	vmmc-supply = <&vreg_l20a_2p95>;
+	vqmmc-supply = <&vreg_s4a_1p8>;
+	non-removable;
+	bus-width = <8>;
+	status = "okay";
+};
