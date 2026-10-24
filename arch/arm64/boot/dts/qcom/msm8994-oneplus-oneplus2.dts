@@ -506,6 +506,23 @@
 &usb3 {
 	/* HS PHY tuning, as the stock device tree sets it */
 	qcom,hsphy-init = <0xd187a7>;
+
+	/*
+	 * Also the HS PHY clocks, which the vendor PHY driver held: no
+	 * mainline driver claims them and they would be turned off as unused.
+	 */
+	clocks = <&gcc GCC_USB30_MASTER_CLK>,
+		 <&gcc GCC_SYS_NOC_USB3_AXI_CLK>,
+		 <&gcc GCC_USB30_SLEEP_CLK>,
+		 <&gcc GCC_USB30_MOCK_UTMI_CLK>,
+		 <&gcc GCC_USB2_HS_PHY_SLEEP_CLK>,
+		 <&gcc GCC_USB_PHY_CFG_AHB2PHY_CLK>;
+	clock-names = "core",
+		      "iface",
+		      "sleep",
+		      "mock_utmi",
+		      "phy_sleep",
+		      "phy_cfg_ahb";
 	status = "okay";
 };
 
