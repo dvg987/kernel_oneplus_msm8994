@@ -292,6 +292,17 @@ static irqreturn_t qcom_iommu_fault(int irq, void *dev)
 	fsynr = iommu_readl(ctx, ARM_SMMU_CB_FSYNR0);
 	iova = iommu_readq(ctx, ARM_SMMU_CB_FAR);
 
+	/* FIXME bring-up: is the faulting address mapped right now? */
+	if (ctx->domain) {
+		struct io_pgtable_ops *ops =
+			to_qcom_iommu_domain(ctx->domain)->pgtbl_ops;
+
+		dev_err_ratelimited(ctx->dev,
+				    "fault: fsr=0x%x fsynr=0x%x far=0x%llx cb=%d pt=%pa\n",
+				    fsr, fsynr, iova, ctx->asid,
+				    &(phys_addr_t){ ops ? ops->iova_to_phys(ops, iova) : 0 });
+	}
+
 	if (report_iommu_fault(ctx->domain, ctx->dev, iova, 0)) {
 		dev_err_ratelimited(ctx->dev,
 				    "Unhandled context fault: fsr=0x%x, "
