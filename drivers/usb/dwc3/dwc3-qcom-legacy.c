@@ -142,6 +142,29 @@ static inline void dwc3_qcom_clrbits(void __iomem *base, u32 offset, u32 val)
  * clamps, retention off, the common block, and the board's parameter
  * override (VBUS/disconnect thresholds, DC level, pre-emphasis).
  */
+/*
+ * MSM8994: the primary port's D+/D- reach this controller's HS PHY only
+ * once TCSR_USB30_CONTROL selects it; out of reset they go to the USB 2.0
+ * controller.  Bootloaders set it only when they use USB themselves.
+ */
+static int dwc3_qcom_select_primary_port(struct dwc3_qcom *qcom)
+{
+	struct platform_device *pdev = to_platform_device(qcom->dev);
+	struct resource *r;
+	void __iomem *tcsr;
+
+	r = platform_get_resource_byname(pdev, IORESOURCE_MEM, "tcsr");
+	if (!r)
+		return 0;
+
+	tcsr = ioremap(r->start, resource_size(r));
+	if (!tcsr)
+		return -ENOMEM;
+	writel(1, tcsr);
+	iounmap(tcsr);
+	return 0;
+}
+
 /* FIXME bring-up: the PHY state as found, and after setup */
 static void dwc3_qcom_qscratch_hs_phy_dump(struct dwc3_qcom *qcom,
 					   const char *when)
@@ -903,8 +926,12 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
 
 	qcom->qscratch_hs_phy = of_device_is_compatible(dev->of_node,
 							 "qcom,msm8994-dwc3");
-	if (qcom->qscratch_hs_phy)
+	if (qcom->qscratch_hs_phy) {
+		ret = dwc3_qcom_select_primary_port(qcom);
+		if (ret)
+			goto clk_disable;
 		dwc3_qcom_qscratch_hs_phy_init(qcom);
+	}
 
 	ret = dwc3_qcom_of_register_core(pdev);
 	if (ret) {
