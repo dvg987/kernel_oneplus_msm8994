@@ -198,6 +198,9 @@ static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
 		readl(base + QSCRATCH_PARAMETER_OVERRIDE_X);
 	}
 
+	/* Keep the RAM clocks on when the core gates its own (vendor CGCTL) */
+	dwc3_qcom_setbits(base, 0x28, 0x18);
+
 	/* Device mode: PHY out of suspend, OTG block on */
 	dwc3_qcom_clrbits(base, QSCRATCH_HS_PHY_CTRL, USB2_SUSPEND_N_SEL);
 	dwc3_qcom_clrbits(base, QSCRATCH_HS_PHY_CTRL_COMMON, COMMON_OTGDISABLE0);

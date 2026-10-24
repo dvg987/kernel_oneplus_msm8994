@@ -534,6 +534,8 @@
 &usb3_dwc3 {
 	dr_mode = "peripheral";
 	maximum-speed = "high-speed";
+	/* Qualcomm: the RAM clock gets stuck in low power with gating on */
+	snps,dis_clk_gating_quirk;
 };
 
 &sdhc1 {

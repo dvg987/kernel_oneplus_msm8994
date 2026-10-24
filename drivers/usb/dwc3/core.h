@@ -1395,6 +1395,7 @@ struct dwc3 {
 	unsigned		rx_detect_poll_quirk:1;
 	unsigned		dis_u3_susphy_quirk:1;
 	unsigned		dis_u2_susphy_quirk:1;
+	unsigned		dis_clk_gating_quirk:1;
 	unsigned		dis_enblslpm_quirk:1;
 	unsigned		dis_u1_entry_quirk:1;
 	unsigned		dis_u2_entry_quirk:1;
