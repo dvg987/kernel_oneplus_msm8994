@@ -31,11 +31,16 @@
 #define USB2_UTMI_CLK_EN			BIT(21)
 #define CLAMP_MPM_DPSE_DMSE_EN_N		BIT(26)
 
+#define USB2_SUSPEND_N_SEL			BIT(23)
+
 #define QSCRATCH_PARAMETER_OVERRIDE_X		0x14
 
 #define QSCRATCH_HS_PHY_CTRL_COMMON		0xec
 #define COMMON_RETENABLEN			BIT(3)
+#define COMMON_FSEL_MASK			(0x7 << 4)
 #define COMMON_FSEL_DEFAULT			(0x3 << 4)
+#define COMMON_CLKCORE				BIT(14)
+#define COMMON_PLLBTUNE				BIT(15)
 #define COMMON_COMMONONN			BIT(7)
 #define COMMON_OTGTUNE0_DEFAULT			(0x4 << 8)
 #define COMMON_OTGDISABLE0			BIT(11)
@@ -171,10 +176,20 @@ static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
 			  CLAMP_MPM_DPSE_DMSE_EN_N | RETENABLEN);
 	usleep_range(2000, 2200);
 
-	dwc3_qcom_setbits(base, QSCRATCH_HS_PHY_CTRL_COMMON,
-			  COMMON_OTGDISABLE0 | COMMON_OTGTUNE0_DEFAULT |
-			  COMMON_COMMONONN | COMMON_FSEL_DEFAULT |
-			  COMMON_RETENABLEN);
+	reg = readl(base + QSCRATCH_HS_PHY_CTRL_COMMON);
+	reg |= COMMON_OTGDISABLE0 | COMMON_OTGTUNE0_DEFAULT |
+	       COMMON_COMMONONN | COMMON_RETENABLEN;
+	/*
+	 * Boards that tune the PLL (qcom,set-pllbtune) clock the PHY core
+	 * from it and leave the reference select (FSEL) at 0.
+	 */
+	reg &= ~COMMON_FSEL_MASK;
+	if (device_property_read_bool(qcom->dev, "qcom,set-pllbtune"))
+		reg |= COMMON_PLLBTUNE | COMMON_CLKCORE;
+	else
+		reg |= COMMON_FSEL_DEFAULT;
+	writel(reg, base + QSCRATCH_HS_PHY_CTRL_COMMON);
+	readl(base + QSCRATCH_HS_PHY_CTRL_COMMON);
 
 	if (!device_property_read_u32(qcom->dev, "qcom,hsphy-init", &init)) {
 		reg = readl(base + QSCRATCH_PARAMETER_OVERRIDE_X);
@@ -182,6 +197,10 @@ static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
 		writel(reg, base + QSCRATCH_PARAMETER_OVERRIDE_X);
 		readl(base + QSCRATCH_PARAMETER_OVERRIDE_X);
 	}
+
+	/* Device mode: PHY out of suspend, OTG block on */
+	dwc3_qcom_clrbits(base, QSCRATCH_HS_PHY_CTRL, USB2_SUSPEND_N_SEL);
+	dwc3_qcom_clrbits(base, QSCRATCH_HS_PHY_CTRL_COMMON, COMMON_OTGDISABLE0);
 }
 
 static void dwc3_qcom_vbus_override_enable(struct dwc3_qcom *qcom, bool enable)
