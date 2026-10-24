@@ -211,11 +211,7 @@
 };
 
 &gpu {
-	/*
-	 * FIXME: on the phone the A430 takes IOMMU faults and hangs in a loop
-	 * of recoveries; off while USB is brought up.
-	 */
-	status = "disabled";
+	status = "okay";
 };
 
 &mdss {
