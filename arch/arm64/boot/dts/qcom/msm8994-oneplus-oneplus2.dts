@@ -203,6 +203,13 @@
 
 &mmcc {
 	vdd-gfx-supply = <&vdd_gfx>;
+	/*
+	 * The MMSS clocks and PLLs run on VDDCX: the stock clock driver
+	 * votes CX corners for them (vdd_dig-supply = pm8994_s1_corner).
+	 * Without a vote MMPLL1 can fail to lock and MDP probe hangs.
+	 */
+	power-domains = <&rpmpd MSM8994_VDDCX>;
+	required-opps = <&rpmpd_opp_nom>;
 };
 
 &ocmem {
@@ -376,6 +383,8 @@
 		vreg_l12a_1p8: l12 {
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
+			/* MMPLL analog supply (stock mmpll4_analog-supply) */
+			regulator-always-on;
 		};
 
 		vreg_l13a_2p95: l13 {
