@@ -865,7 +865,8 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	usleep_range(10, 1000);
+	/* PHY resets (MSM8994 HS PHY) need about a millisecond */
+	usleep_range(1000, 1200);
 
 	ret = reset_control_deassert(qcom->resets);
 	if (ret) {

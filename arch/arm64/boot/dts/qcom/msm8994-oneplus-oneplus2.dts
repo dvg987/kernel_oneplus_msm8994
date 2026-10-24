@@ -516,6 +516,9 @@
 	qcom,hsphy-init = <0xd187a7>;
 	qcom,set-pllbtune;
 
+	/* The vendor glue resets the core and the HS PHY before setting it up */
+	resets = <&gcc USB_30_RESET>, <&gcc USB2_HS_PHY_ONLY_RESET>;
+
 	/*
 	 * Also the HS PHY clocks, which the vendor PHY driver held: no
 	 * mainline driver claims them and they would be turned off as unused.
