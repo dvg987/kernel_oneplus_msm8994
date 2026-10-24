@@ -28,6 +28,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/firmware/qcom/qcom_scm.h>
 #include <linux/slab.h>
+#include <linux/stacktrace.h>
 #include <linux/spinlock.h>
 
 #include "arm-smmu.h"
@@ -284,8 +285,10 @@ struct qcom_iommu_dbg_op {
 	size_t size;
 	u64 ns;
 	bool map;
+	unsigned int nr;
+	unsigned long stack[10];
 };
-static struct qcom_iommu_dbg_op qcom_iommu_dbg_ring[256];
+static struct qcom_iommu_dbg_op qcom_iommu_dbg_ring[4096];
 static atomic_t qcom_iommu_dbg_idx;
 static DEFINE_RATELIMIT_STATE(qcom_iommu_dbg_rs, 5 * HZ, 3);
 
@@ -302,6 +305,7 @@ static void qcom_iommu_dbg_record(struct qcom_iommu_domain *qd,
 	op->size = size;
 	op->ns = ktime_get_ns();
 	op->map = map;
+	op->nr = stack_trace_save(op->stack, ARRAY_SIZE(op->stack), 2);
 }
 
 static void qcom_iommu_dbg_fault(struct qcom_iommu_ctx *ctx,
@@ -330,6 +334,7 @@ static void qcom_iommu_dbg_fault(struct qcom_iommu_ctx *ctx,
 		dev_err(ctx->dev, "fault 0x%llx: in %s 0x%lx+0x%zx %llu us ago\n",
 			far, op->map ? "map" : "unmap", op->iova, op->size,
 			(now - op->ns) / 1000);
+		stack_trace_print(op->stack, op->nr, 4);
 	}
 }
 
