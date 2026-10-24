@@ -278,6 +278,61 @@ static bool qcom_iommu_is_msm8994_gpu(const struct device *dev)
 	       of_device_is_compatible(dev->of_node, "qcom,msm8994-gpu-iommu");
 }
 
+/* FIXME bring-up: recent GPU map/unmap calls, to classify GPU faults */
+struct qcom_iommu_dbg_op {
+	unsigned long iova;
+	size_t size;
+	u64 ns;
+	bool map;
+};
+static struct qcom_iommu_dbg_op qcom_iommu_dbg_ring[256];
+static atomic_t qcom_iommu_dbg_idx;
+static DEFINE_RATELIMIT_STATE(qcom_iommu_dbg_rs, 5 * HZ, 3);
+
+static void qcom_iommu_dbg_record(struct qcom_iommu_domain *qd,
+				  unsigned long iova, size_t size, bool map)
+{
+	struct qcom_iommu_dbg_op *op;
+
+	if (!qd->iommu || !qcom_iommu_is_msm8994_gpu(qd->iommu->dev))
+		return;
+	op = &qcom_iommu_dbg_ring[atomic_inc_return(&qcom_iommu_dbg_idx) %
+				  ARRAY_SIZE(qcom_iommu_dbg_ring)];
+	op->iova = iova;
+	op->size = size;
+	op->ns = ktime_get_ns();
+	op->map = map;
+}
+
+static void qcom_iommu_dbg_fault(struct qcom_iommu_ctx *ctx,
+				 struct io_pgtable_ops *ops, u64 far)
+{
+	unsigned long page = far & ~0xfffUL, off;
+	u64 now = ktime_get_ns();
+	unsigned int i;
+
+	for (off = 0x1000; off <= 0x100000; off += 0x1000)
+		if (page >= off && ops->iova_to_phys(ops, page - off))
+			break;
+	dev_err(ctx->dev, "fault 0x%llx: mapped page below at -0x%lx\n",
+		far, off <= 0x100000 ? off : 0);
+	for (off = 0x1000; off <= 0x100000; off += 0x1000)
+		if (ops->iova_to_phys(ops, page + off))
+			break;
+	dev_err(ctx->dev, "fault 0x%llx: mapped page above at +0x%lx\n",
+		far, off <= 0x100000 ? off : 0);
+
+	for (i = 0; i < ARRAY_SIZE(qcom_iommu_dbg_ring); i++) {
+		struct qcom_iommu_dbg_op *op = &qcom_iommu_dbg_ring[i];
+
+		if (!op->size || far < op->iova || far >= op->iova + op->size)
+			continue;
+		dev_err(ctx->dev, "fault 0x%llx: in %s 0x%lx+0x%zx %llu us ago\n",
+			far, op->map ? "map" : "unmap", op->iova, op->size,
+			(now - op->ns) / 1000);
+	}
+}
+
 static irqreturn_t qcom_iommu_fault(int irq, void *dev)
 {
 	struct qcom_iommu_ctx *ctx = dev;
@@ -301,6 +356,8 @@ static irqreturn_t qcom_iommu_fault(int irq, void *dev)
 				    "fault: fsr=0x%x fsynr=0x%x far=0x%llx cb=%d pt=%pa\n",
 				    fsr, fsynr, iova, ctx->asid,
 				    &(phys_addr_t){ ops ? ops->iova_to_phys(ops, iova) : 0 });
+		if (ops && __ratelimit(&qcom_iommu_dbg_rs))
+			qcom_iommu_dbg_fault(ctx, ops, iova);
 	}
 
 	if (report_iommu_fault(ctx->domain, ctx->dev, iova, 0)) {
@@ -717,6 +774,7 @@ static int qcom_iommu_map(struct iommu_domain *domain, unsigned long iova,
 	spin_lock_irqsave(&qcom_domain->pgtbl_lock, flags);
 	ret = ops->map_pages(ops, iova, paddr, pgsize, pgcount, prot, GFP_ATOMIC, mapped);
 	spin_unlock_irqrestore(&qcom_domain->pgtbl_lock, flags);
+	qcom_iommu_dbg_record(qcom_domain, iova, pgsize * pgcount, true);
 	return ret;
 }
 
@@ -741,6 +799,7 @@ static size_t qcom_iommu_unmap(struct iommu_domain *domain, unsigned long iova,
 	spin_lock_irqsave(&qcom_domain->pgtbl_lock, flags);
 	ret = ops->unmap_pages(ops, iova, pgsize, pgcount, gather);
 	spin_unlock_irqrestore(&qcom_domain->pgtbl_lock, flags);
+	qcom_iommu_dbg_record(qcom_domain, iova, pgsize * pgcount, false);
 	pm_runtime_put_sync(qcom_domain->iommu->dev);
 
 	return ret;
