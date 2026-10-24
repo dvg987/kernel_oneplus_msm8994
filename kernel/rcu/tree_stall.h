@@ -17,7 +17,8 @@
 // Controlling CPU stall warnings, including delay calculation.
 
 /* panic() on RCU Stall sysctl. */
-static int sysctl_panic_on_rcu_stall __read_mostly;
+/* FIXME bring-up: panic, so the CPU debug driver dumps the stuck PCs */
+static int sysctl_panic_on_rcu_stall __read_mostly = 1;
 static int sysctl_max_rcu_stall_to_panic __read_mostly;
 
 static const struct ctl_table rcu_stall_sysctl_table[] = {

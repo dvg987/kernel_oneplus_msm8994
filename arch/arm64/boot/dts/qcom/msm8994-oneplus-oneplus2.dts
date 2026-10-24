@@ -656,3 +656,50 @@
 		};
 	};
 };
+
+&soc {
+	/*
+	 * CPU external debug (EDPCSR): the PCs of stuck cores on panic.
+	 * Only the cores lk2nd starts: the debug block of a core that is
+	 * powered down does not answer.
+	 */
+	debug@fb810000 {
+		compatible = "arm,coresight-cpu-debug", "arm,primecell";
+		reg = <0xfb810000 0x1000>;
+		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clock-names = "apb_pclk";
+		cpu = <&cpu0>;
+	};
+
+	debug@fbc10000 {
+		compatible = "arm,coresight-cpu-debug", "arm,primecell";
+		reg = <0xfbc10000 0x1000>;
+		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clock-names = "apb_pclk";
+		cpu = <&cpu4>;
+	};
+
+	debug@fbd10000 {
+		compatible = "arm,coresight-cpu-debug", "arm,primecell";
+		reg = <0xfbd10000 0x1000>;
+		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clock-names = "apb_pclk";
+		cpu = <&cpu5>;
+	};
+
+	debug@fbe10000 {
+		compatible = "arm,coresight-cpu-debug", "arm,primecell";
+		reg = <0xfbe10000 0x1000>;
+		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clock-names = "apb_pclk";
+		cpu = <&cpu6>;
+	};
+
+	debug@fbf10000 {
+		compatible = "arm,coresight-cpu-debug", "arm,primecell";
+		reg = <0xfbf10000 0x1000>;
+		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clock-names = "apb_pclk";
+		cpu = <&cpu7>;
+	};
+};
