@@ -33,6 +33,22 @@
 
 #define QSCRATCH_PARAMETER_OVERRIDE_X		0x14
 
+#define USB2_SUSPEND_N_SEL			BIT(23)
+
+/* USB2PHY CSRs (MSM8994), which can take over the HS PHY from QSCRATCH */
+#define USB2PHY_HS_PHY_CTRL_COMMON0		0x78
+#define USB2PHY_COMMONONN			BIT(7)
+#define USB2PHY_RETENABLEN			BIT(3)
+#define USB2PHY_HS_PHY_CTRL2			0x90
+#define USB2PHY_SUSPEND_N_SEL			BIT(7)
+#define USB2PHY_SUSPEND_N			BIT(6)
+#define USB2PHY_USB_PHY_CFG0			0xc4
+#define USB2PHY_OVERRIDE_EN			0x7
+#define USB2PHY_USB_PHY_REFCLK_CTRL		0xe8
+#define REFCLK_RXTAP_EN				BIT(0)
+#define USB2PHY_USB_PHY_PWRDOWN_CTRL		0xec
+#define PWRDN_B					BIT(0)
+
 #define QSCRATCH_HS_PHY_CTRL_COMMON		0xec
 #define COMMON_RETENABLEN			BIT(3)
 #define COMMON_FSEL_DEFAULT			(0x3 << 4)
@@ -139,8 +155,29 @@ static inline void dwc3_qcom_clrbits(void __iomem *base, u32 offset, u32 val)
  */
 static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
 {
+	struct platform_device *pdev = to_platform_device(qcom->dev);
 	void __iomem *base = qcom->qscratch_base;
+	void __iomem *csr;
 	u32 init, reg;
+
+	/*
+	 * A kernel that suspended the PHY before a warm reset (the vendor one,
+	 * recovery) leaves it powered down under CSR control, where nothing in
+	 * QSCRATCH reaches it: power it up and give it back, as the vendor
+	 * driver does on resume.
+	 */
+	csr = devm_platform_ioremap_resource(pdev, 1);
+	if (!IS_ERR(csr)) {
+		dwc3_qcom_setbits(csr, USB2PHY_USB_PHY_PWRDOWN_CTRL, PWRDN_B);
+		dwc3_qcom_setbits(csr, USB2PHY_USB_PHY_REFCLK_CTRL,
+				  REFCLK_RXTAP_EN);
+		dwc3_qcom_setbits(csr, USB2PHY_HS_PHY_CTRL_COMMON0,
+				  USB2PHY_COMMONONN | USB2PHY_RETENABLEN);
+		dwc3_qcom_clrbits(csr, USB2PHY_HS_PHY_CTRL2,
+				  USB2PHY_SUSPEND_N_SEL | USB2PHY_SUSPEND_N);
+		dwc3_qcom_clrbits(csr, USB2PHY_USB_PHY_CFG0,
+				  USB2PHY_OVERRIDE_EN);
+	}
 
 	dwc3_qcom_setbits(base, QSCRATCH_HS_PHY_CTRL, USB2_UTMI_CLK_EN |
 			  CLAMP_MPM_DPSE_DMSE_EN_N | RETENABLEN);
@@ -157,6 +194,10 @@ static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
 		writel(reg, base + QSCRATCH_PARAMETER_OVERRIDE_X);
 		readl(base + QSCRATCH_PARAMETER_OVERRIDE_X);
 	}
+
+	/* Out of suspend, OTG block on (device mode) */
+	dwc3_qcom_clrbits(base, QSCRATCH_HS_PHY_CTRL, USB2_SUSPEND_N_SEL);
+	dwc3_qcom_clrbits(base, QSCRATCH_HS_PHY_CTRL_COMMON, COMMON_OTGDISABLE0);
 }
 
 static void dwc3_qcom_vbus_override_enable(struct dwc3_qcom *qcom, bool enable)
