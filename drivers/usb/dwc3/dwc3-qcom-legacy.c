@@ -137,10 +137,35 @@ static inline void dwc3_qcom_clrbits(void __iomem *base, u32 offset, u32 val)
  * clamps, retention off, the common block, and the board's parameter
  * override (VBUS/disconnect thresholds, DC level, pre-emphasis).
  */
+/* FIXME bring-up: the PHY state as found, and after setup */
+static void dwc3_qcom_qscratch_hs_phy_dump(struct dwc3_qcom *qcom,
+					   const char *when)
+{
+	struct platform_device *pdev = to_platform_device(qcom->dev);
+	void __iomem *base = qcom->qscratch_base;
+	struct resource *r = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	void __iomem *csr = r ? ioremap(r->start, resource_size(r)) : NULL;
+
+	dev_info(qcom->dev, "%s: ver %08x gen %08x hs_ctrl %08x param %08x common %08x ss_ctrl %08x\n",
+		 when, readl(base), readl(base + 0x08),
+		 readl(base + QSCRATCH_HS_PHY_CTRL),
+		 readl(base + QSCRATCH_PARAMETER_OVERRIDE_X),
+		 readl(base + QSCRATCH_HS_PHY_CTRL_COMMON),
+		 readl(base + 0x30));
+	if (csr) {
+		dev_info(qcom->dev, "%s: csr cfg0 %08x ctrl2 %08x common0 %08x refclk %08x pwrdown %08x\n",
+			 when, readl(csr + 0xc4), readl(csr + 0x90),
+			 readl(csr + 0x78), readl(csr + 0xe8), readl(csr + 0xec));
+		iounmap(csr);
+	}
+}
+
 static void dwc3_qcom_qscratch_hs_phy_init(struct dwc3_qcom *qcom)
 {
 	void __iomem *base = qcom->qscratch_base;
 	u32 init, reg;
+
+	dwc3_qcom_qscratch_hs_phy_dump(qcom, "hsphy at probe");
 
 	dwc3_qcom_setbits(base, QSCRATCH_HS_PHY_CTRL, USB2_UTMI_CLK_EN |
 			  CLAMP_MPM_DPSE_DMSE_EN_N | RETENABLEN);
@@ -873,6 +898,8 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
 	/* enable vbus override for device mode */
 	if (qcom->mode != USB_DR_MODE_HOST)
 		dwc3_qcom_vbus_override_enable(qcom, true);
+	if (qcom->qscratch_hs_phy)
+		dwc3_qcom_qscratch_hs_phy_dump(qcom, "hsphy after setup");
 
 	/* register extcon to override sw_vbus on Vbus change later */
 	ret = dwc3_qcom_register_extcon(qcom);

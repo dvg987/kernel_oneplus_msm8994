@@ -504,6 +504,10 @@
 };
 
 &usb3 {
+	/* QSCRATCH, and the HS PHY CSRs (USB2PHY) */
+	reg = <0xf92f8800 0x400>,
+	      <0xf9b3a000 0x110>;
+
 	/* HS PHY tuning, as the stock device tree sets it */
 	qcom,hsphy-init = <0xd187a7>;
 
