@@ -844,6 +844,25 @@ static int qcom_iommu_iotlb_sync_map(struct iommu_domain *domain,
 	if (!qcom_domain->pgtbl_ops || !qcom_domain->fwspec ||
 	    !qcom_domain->iommu)
 		return 0;
+	/*
+	 * The MDP SMMU keeps what it looked up before a mapping existed as
+	 * well: without an invalidation the display fetches a new buffer's
+	 * pages through stale entries (garbage in the last line, glitches
+	 * when buffers are reallocated).  Drop the range that was mapped,
+	 * page by page, and only while the SMMU is powered: a context-wide
+	 * invalidation hangs MDP at probe.
+	 */
+	if (of_device_is_compatible(qcom_domain->iommu->dev->of_node,
+				    "qcom,msm8994-mdp-iommu")) {
+		if (pm_runtime_get_if_active(qcom_domain->iommu->dev) <= 0)
+			return 0;
+		qcom_iommu_tlb_inv_range_nosync(iova, ALIGN(size, SZ_4K), SZ_4K,
+						true, qcom_domain);
+		qcom_iommu_tlb_sync(qcom_domain);
+		pm_runtime_put(qcom_domain->iommu->dev);
+		return 0;
+	}
+
 	if (!qcom_iommu_is_msm8994_gpu(qcom_domain->iommu->dev) ||
 	    !msm8994_oxili_pre_gpu_voted())
 		return 0;
