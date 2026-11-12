@@ -237,6 +237,15 @@ static const int smbchg_lc_ilim_options[] = {
 #define LC_ILIM_FULL_CURRENT_BIT	BIT(1)
 #define smbchg_lc_ilim(usb_3, full_current) smbchg_lc_ilim_options[usb_3 | full_current << 1]
 
+/* Up to max_temp (0.1 degC): fcc_ua 0 is no charging */
+struct smbchg_temp_zone {
+	int max_temp;
+	int float_uv;
+	int fcc_ua;
+};
+
+#define SMBCHG_TEMP_POLL_MS	10000
+
 struct smbchg_chip {
 	unsigned int base;
 	struct device *dev;
@@ -260,6 +269,18 @@ struct smbchg_chip {
 	bool sdp_icl_from_host;
 	bool sdp_cfg_stale;
 	unsigned int typec_icl_ua;
+
+	/* Battery temperature zones: float voltage and charge current */
+	struct delayed_work temp_work;
+	struct smbchg_temp_zone *zones;
+	unsigned int nzones;
+	unsigned int normal_zone;
+	unsigned int careful_zone;
+	u32 temp_hyst;
+	int temp_zone;
+	bool temp_inhibit;
+	struct power_supply *temp_batt;
+	struct device_node *batt_np;
 
 	const struct smbchg_data *data;
 };

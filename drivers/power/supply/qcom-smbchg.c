@@ -1051,6 +1051,209 @@ static int smbchg_apsd_rerun(struct smbchg_chip *chip)
  * wall (AICL from 1800). A configured gadget is still a host (500 mA).
  * Type-C 1.5 A / 3 A Rp (not default USB Rp) wins via typec_icl_ua.
  */
+static int smbchg_temp_raw_zone(struct smbchg_chip *chip, int temp)
+{
+	unsigned int i;
+
+	for (i = 0; i < chip->nzones; i++)
+		if (temp <= chip->zones[i].max_temp)
+			break;
+	/* nzones: above the last zone, no charging */
+	return i;
+}
+
+/*
+ * The zone for a battery temperature.  Leaving the normal zone (the one
+ * with the highest current) takes effect at once, coming back towards it
+ * only once the temperature is the hysteresis past the boundary.
+ */
+static int smbchg_temp_pick_zone(struct smbchg_chip *chip, int temp)
+{
+	int cur = chip->temp_zone, normal = chip->normal_zone;
+	int raw = smbchg_temp_raw_zone(chip, temp);
+
+	if (cur < 0 || raw == cur)
+		return raw;
+	if (cur < normal && raw > cur)
+		return max(cur, smbchg_temp_raw_zone(chip,
+						     temp - chip->temp_hyst));
+	if (cur > normal && raw < cur)
+		return min(cur, smbchg_temp_raw_zone(chip,
+						     temp + chip->temp_hyst));
+	return raw;
+}
+
+/* The fuel gauge that monitors the same battery as this charger */
+static int smbchg_match_battery(struct power_supply *psy, void *data)
+{
+	struct smbchg_chip *chip = data;
+	struct device_node *np;
+	bool match;
+
+	if (psy->desc->type != POWER_SUPPLY_TYPE_BATTERY || !psy->dev.of_node)
+		return 0;
+
+	np = of_parse_phandle(psy->dev.of_node, "monitored-battery", 0);
+	match = np && np == chip->batt_np;
+	of_node_put(np);
+	if (!match)
+		return 0;
+
+	chip->temp_batt = power_supply_get_by_name(psy->desc->name);
+	return 1;
+}
+
+static int smbchg_temp_read(struct smbchg_chip *chip, int *temp)
+{
+	union power_supply_propval val;
+	int ret;
+
+	if (!chip->temp_batt && chip->batt_np)
+		power_supply_for_each_psy(chip, smbchg_match_battery);
+	if (!chip->temp_batt)
+		return -ENODEV;
+
+	ret = power_supply_get_property(chip->temp_batt, POWER_SUPPLY_PROP_TEMP,
+					&val);
+	if (ret)
+		return ret;
+	*temp = val.intval;
+	return 0;
+}
+
+/* The lock is held */
+static void smbchg_temp_apply(struct smbchg_chip *chip)
+{
+	int vmax = chip->batt_info->constant_charge_voltage_max_uv;
+	int temp, zone, ret, fv, fcc;
+
+	if (!chip->nzones || !chip->usb_present)
+		return;
+	if (vmax == -EINVAL)
+		vmax = chip->batt_info->voltage_max_design_uv;
+
+	ret = smbchg_temp_read(chip, &temp);
+	if (ret) {
+		/* No temperature: the most careful zone that still charges */
+		zone = chip->careful_zone;
+		dev_warn_ratelimited(chip->dev,
+				     "no battery temperature (%pe), zone %d\n",
+				     ERR_PTR(ret), zone);
+	} else {
+		zone = smbchg_temp_pick_zone(chip, temp);
+	}
+
+	if (zone == chip->temp_zone)
+		return;
+
+	if (zone >= chip->nzones || !chip->zones[zone].fcc_ua) {
+		chip->temp_inhibit = true;
+		smbchg_charging_enable(chip, false);
+		dev_info(chip->dev, "temperature zone %d: not charging\n", zone);
+		chip->temp_zone = zone;
+		return;
+	}
+
+	fv = min(chip->zones[zone].float_uv, vmax);
+	fcc = chip->zones[zone].fcc_ua;
+
+	/* Down first: never a high current at a new, lower voltage */
+	ret = smbchg_charging_set_ilim(chip, fcc);
+	fv = smbchg_charging_set_vfloat(chip, fv);
+	if (ret < 0 || fv < 0) {
+		chip->temp_inhibit = true;
+		smbchg_charging_enable(chip, false);
+		dev_err(chip->dev, "temperature zone %d not programmed, not charging\n",
+			zone);
+		return;
+	}
+	chip->temp_inhibit = false;
+	smbchg_charging_enable(chip, true);
+	dev_dbg(chip->dev, "temperature zone %d: float %d uV, charge current %d uA\n",
+		zone, fv, ret);
+	chip->temp_zone = zone;
+}
+
+static void smbchg_temp_work(struct work_struct *work)
+{
+	struct smbchg_chip *chip = container_of(work, struct smbchg_chip,
+						temp_work.work);
+	bool present;
+
+	mutex_lock(&chip->lock);
+	present = chip->usb_present;
+	if (!present)
+		chip->temp_zone = -1;
+	smbchg_temp_apply(chip);
+	mutex_unlock(&chip->lock);
+
+	if (present)
+		queue_delayed_work(system_dfl_wq, &chip->temp_work,
+				   msecs_to_jiffies(SMBCHG_TEMP_POLL_MS));
+}
+
+static int smbchg_temp_parse(struct smbchg_chip *chip)
+{
+	struct device_node *np = chip->dev->of_node;
+	int n = of_property_count_u32_elems(np, "qcom,temp-zones");
+	unsigned int i, normal = 0, careful = 0;
+	u32 *tbl;
+	int ret;
+
+	if (n <= 0)
+		return 0;
+	if (n % 3)
+		return -EINVAL;
+
+	tbl = kcalloc(n, sizeof(*tbl), GFP_KERNEL);
+	if (!tbl)
+		return -ENOMEM;
+	ret = of_property_read_u32_array(np, "qcom,temp-zones", tbl, n);
+	if (ret)
+		goto out;
+
+	n /= 3;
+	chip->zones = devm_kcalloc(chip->dev, n, sizeof(*chip->zones),
+				   GFP_KERNEL);
+	if (!chip->zones) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = -EINVAL;
+	for (i = 0; i < n; i++) {
+		struct smbchg_temp_zone *z = &chip->zones[i];
+
+		z->max_temp = (s32)tbl[i * 3];
+		z->float_uv = tbl[i * 3 + 1];
+		z->fcc_ua = tbl[i * 3 + 2];
+		if (i && z->max_temp <= chip->zones[i - 1].max_temp)
+			goto out;
+		if (z->fcc_ua > chip->zones[normal].fcc_ua)
+			normal = i;
+	}
+	if (!chip->zones[normal].fcc_ua)
+		goto out;
+
+	careful = normal;
+	for (i = 0; i < n; i++)
+		if (chip->zones[i].fcc_ua &&
+		    chip->zones[i].fcc_ua < chip->zones[careful].fcc_ua)
+			careful = i;
+
+	chip->batt_np = of_parse_phandle(np, "monitored-battery", 0);
+	chip->temp_hyst = 20;
+	of_property_read_u32(np, "qcom,temp-hysteresis", &chip->temp_hyst);
+	chip->normal_zone = normal;
+	chip->careful_zone = careful;
+	chip->temp_zone = -1;
+	chip->nzones = n;
+	ret = 0;
+out:
+	kfree(tbl);
+	return ret;
+}
+
 static int smbchg_apply_input_policy(struct smbchg_chip *chip)
 {
 	enum power_supply_usb_type usb_type;
@@ -1062,7 +1265,7 @@ static int smbchg_apply_input_policy(struct smbchg_chip *chip)
 		return smbchg_usb_enable(chip, false);
 	}
 
-	ret = smbchg_charging_enable(chip, true);
+	ret = smbchg_charging_enable(chip, !chip->temp_inhibit);
 	if (ret)
 		return ret;
 
@@ -1167,6 +1370,9 @@ static void smbchg_src_det_work(struct work_struct *work)
 	if (ret)
 		dev_err(chip->dev, "Failed to apply input policy: %pe\n",
 			ERR_PTR(ret));
+
+	if (chip->nzones)
+		mod_delayed_work(system_dfl_wq, &chip->temp_work, 0);
 
 	smbchg_notify(chip);
 }
@@ -1711,8 +1917,11 @@ static int smbchg_init(struct smbchg_chip *chip)
 	}
 
 	/* Set constant charge current limit */
+	/* With temperature zones, the most careful one until a zone is picked */
 	ret = smbchg_charging_set_ilim(
-		chip, chip->batt_info->constant_charge_current_max_ua);
+		chip, chip->nzones ?
+		chip->zones[chip->careful_zone].fcc_ua :
+		chip->batt_info->constant_charge_current_max_ua);
 	if (ret < 0) {
 		dev_err(chip->dev,
 			"Failed to set constant charge current limit: %pe\n",
@@ -1825,6 +2034,10 @@ static int smbchg_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->otg_reset_work, smbchg_otg_reset_worker);
 	INIT_DELAYED_WORK(&chip->src_det_work, smbchg_src_det_work);
 	INIT_DELAYED_WORK(&chip->sdp_float_work, smbchg_sdp_float_work);
+	INIT_DELAYED_WORK(&chip->temp_work, smbchg_temp_work);
+	ret = smbchg_temp_parse(chip);
+	if (ret)
+		return dev_err_probe(chip->dev, ret, "bad qcom,temp-zones\n");
 
 	/* Initialize OTG regulator */
 	chip->otg_rdesc.id = -1;
@@ -1936,6 +2149,10 @@ static int smbchg_probe(struct platform_device *pdev)
 	return 0;
 
 put_batt_info:
+	cancel_delayed_work_sync(&chip->temp_work);
+	if (chip->temp_batt)
+		power_supply_put(chip->temp_batt);
+	of_node_put(chip->batt_np);
 	power_supply_put_battery_info(chip->usb_psy, chip->batt_info);
 	return ret;
 }
@@ -1946,6 +2163,10 @@ static void smbchg_remove(struct platform_device *pdev)
 
 	cancel_delayed_work_sync(&chip->src_det_work);
 	cancel_delayed_work_sync(&chip->sdp_float_work);
+	cancel_delayed_work_sync(&chip->temp_work);
+	if (chip->temp_batt)
+		power_supply_put(chip->temp_batt);
+	of_node_put(chip->batt_np);
 	smbchg_usb_enable(chip, false);
 	smbchg_charging_enable(chip, false);
 	power_supply_put_battery_info(chip->usb_psy, chip->batt_info);
