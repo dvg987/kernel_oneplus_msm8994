@@ -751,6 +751,9 @@
 		device-chemistry = "lithium-ion-polymer";
 		charge-full-design-microamp-hours = <3300000>;
 		voltage-max-design-microvolt = <4320000>;
+		constant-charge-voltage-max-microvolt = <4320000>;
+		constant-charge-current-max-microamp = <1910000>;
+		charge-term-current-microamp = <150000>;
 	};
 };
 
@@ -763,5 +766,25 @@
 	monitored-battery = <&battery>;
 	qcom,batt-id-kohm = <50>;
 	qcom,batt-id-range-pct = <30>;
+	status = "okay";
+};
+
+&pmi8994_smbchg {
+	monitored-battery = <&battery>;
+
+	/*
+	 * The vendor kernel's charging zones (qpnp-smbcharger.c): up to this
+	 * battery temperature (0.1 degC), float voltage (uV) and charge
+	 * current (uA).  No charging below the first and above the last.
+	 */
+	qcom,temp-zones = <(-30)       0       0>,
+			  <   0  3980000  300000>,
+			  <  50  4320000  500000>,
+			  < 120  4320000  800000>,
+			  < 220  4320000 1300000>,
+			  < 450  4320000 1910000>,
+			  < 550  4080000  600000>;
+	qcom,temp-hysteresis = <20>;
+
 	status = "okay";
 };
