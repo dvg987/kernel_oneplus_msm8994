@@ -743,3 +743,25 @@
 		bias-pull-down;
 	};
 };
+
+/ {
+	/* 3300 mAh, 4.32 V (stock batterydata_oneplus_{ATL,SDI}_3300mAh) */
+	battery: battery {
+		compatible = "simple-battery";
+		device-chemistry = "lithium-ion-polymer";
+		charge-full-design-microamp-hours = <3300000>;
+		voltage-max-design-microvolt = <4320000>;
+	};
+};
+
+&pmi8994_fg {
+	/*
+	 * Read only for now: no tuning values and no profile, so the gauge
+	 * keeps what the vendor firmware left in it.  The ID range is only
+	 * there to have the battery ID resistor measured and logged.
+	 */
+	monitored-battery = <&battery>;
+	qcom,batt-id-kohm = <50>;
+	qcom,batt-id-range-pct = <30>;
+	status = "okay";
+};
