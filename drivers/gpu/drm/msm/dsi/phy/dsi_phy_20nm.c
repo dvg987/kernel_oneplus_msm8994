@@ -7,6 +7,7 @@
 #include <linux/clk-provider.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
+#include <linux/of.h>
 #include <linux/pm_runtime.h>
 
 #include "dsi_phy.h"
@@ -1057,6 +1058,20 @@ static int dsi_20nm_phy_enable(struct msm_dsi_phy *phy,
 		DRM_DEV_ERROR(&phy->pdev->dev,
 			"%s: D-PHY timing calculation failed\n", __func__);
 		return -EINVAL;
+	}
+
+	/*
+	 * Panels tuned with the vendor kernel may need its clock lane
+	 * timings: the calculated T_CLK_POST can stop a non-continuous
+	 * clock before the panel has latched the end of a transfer.
+	 */
+	if (!of_property_read_u32(phy->pdev->dev.of_node, "qcom,t-clk-post",
+				  &val))
+		timing->shared_timings.clk_post = val;
+	if (!of_property_read_u32(phy->pdev->dev.of_node, "qcom,t-clk-pre",
+				  &val)) {
+		timing->shared_timings.clk_pre = val;
+		timing->shared_timings.clk_pre_inc_by_2 = false;
 	}
 
 	dsi_20nm_phy_regulator_ctrl(phy, true);

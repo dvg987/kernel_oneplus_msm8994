@@ -258,6 +258,9 @@
 };
 
 &dsi0_phy {
+	/* The stock panel timings: without them the last line is lost */
+	qcom,t-clk-post = <0x20>;
+	qcom,t-clk-pre = <0x3e>;
 	status = "okay";
 };
 
