@@ -179,7 +179,7 @@
 
 		rmi4-f01@1 {
 			reg = <0x01>;
-			syna,nosleep-mode = <1>;
+			syna,nosleep-mode = <2>;	/* on: no doze, quick taps register */
 		};
 
 		rmi4-f12@12 {
