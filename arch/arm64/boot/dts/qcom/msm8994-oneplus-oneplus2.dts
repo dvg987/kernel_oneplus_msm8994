@@ -241,6 +241,9 @@
 		vddio-supply = <&vreg_l14a_1p8>;
 		reset-gpios = <&tlmm 78 GPIO_ACTIVE_LOW>;
 
+		pinctrl-0 = <&mdss_te_default>;
+		pinctrl-names = "default";
+
 		port {
 			panel_in: endpoint {
 				remote-endpoint = <&dsi0_out>;
@@ -725,5 +728,15 @@
 		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu7>;
+	};
+};
+
+&tlmm {
+	/* The panel's tearing effect output: MDP starts its transfers on it */
+	mdss_te_default: mdss-te-default-state {
+		pins = "gpio10";
+		function = "mdp_vsync";
+		drive-strength = <2>;
+		bias-pull-down;
 	};
 };
