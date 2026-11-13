@@ -85,6 +85,8 @@ struct wcd9330_codec {
 	int rx_bias_users;
 	int cp_users;
 	u8 clsh_state;
+	bool hph_class_ab;
+	int clsab_users;
 	int clsh_users;
 	int buck_users;
 	int ncp_users[2];
@@ -527,6 +529,52 @@ static void wcd9330_clsh_state_hph(struct snd_soc_component *comp,
 	}
 }
 
+/*
+ * 3.10 wcd9xxx_enable_high_perf_mode: the headphone amplifiers in class AB,
+ * on the charge pump alone, for boards whose class H buck is not usable.
+ */
+static void wcd9330_hph_class_ab(struct snd_soc_component *comp,
+				 struct wcd9330_codec *wcd, bool enable)
+{
+	if (enable) {
+		if (wcd->clsab_users++)
+			return;
+		snd_soc_component_write(comp, TOMTOM_A_RX_HPH_BIAS_PA,
+					TOMTOM_A_RX_HPH_BIAS_PA__POR);
+		snd_soc_component_write(comp, TOMTOM_A_RX_HPH_L_PA_CTL, 0x48);
+		snd_soc_component_write(comp, TOMTOM_A_RX_HPH_R_PA_CTL, 0x48);
+		snd_soc_component_update_bits(comp, TOMTOM_A_CDC_CLK_OTHR_CTL,
+					      0x01, 0x01);
+		snd_soc_component_update_bits(comp, TOMTOM_A_CDC_CLSH_B1_CTL,
+					      0x02, 0x02);
+		snd_soc_component_update_bits(comp, TOMTOM_A_BUCK_MODE_1,
+					      0x80, 0x00);
+		snd_soc_component_update_bits(comp, TOMTOM_A_NCP_STATIC,
+					      0x0f, 0x08);
+		snd_soc_component_update_bits(comp, TOMTOM_A_NCP_STATIC,
+					      0x30, 0x30);
+		if (snd_soc_component_update_bits(comp, TOMTOM_A_NCP_EN,
+						  0x01, 0x01))
+			usleep_range(50, 60);
+	} else {
+		if (!wcd->clsab_users || --wcd->clsab_users)
+			return;
+		snd_soc_component_update_bits(comp, TOMTOM_A_RX_HPH_CHOP_CTL,
+					      0x20, 0x20);
+		snd_soc_component_write(comp, TOMTOM_A_RX_HPH_L_PA_CTL,
+					TOMTOM_A_RX_HPH_L_PA_CTL__POR);
+		snd_soc_component_write(comp, TOMTOM_A_RX_HPH_R_PA_CTL,
+					TOMTOM_A_RX_HPH_R_PA_CTL__POR);
+		snd_soc_component_write(comp, TOMTOM_A_RX_HPH_BIAS_PA, 0x57);
+		snd_soc_component_update_bits(comp, TOMTOM_A_CDC_CLK_OTHR_CTL,
+					      0x01, 0x00);
+		snd_soc_component_update_bits(comp, TOMTOM_A_CDC_CLSH_B1_CTL,
+					      0x02, 0x00);
+		snd_soc_component_update_bits(comp, TOMTOM_A_NCP_EN,
+					      0x01, 0x00);
+	}
+}
+
 /* 3.10 wcd9xxx_clsh_fsm — HPHL / HPHR / HPH_ST only. */
 static void wcd9330_clsh_fsm(struct snd_soc_component *comp, u8 req_state,
 			     bool enable, u8 event)
@@ -534,6 +582,14 @@ static void wcd9330_clsh_fsm(struct snd_soc_component *comp, u8 req_state,
 	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
 	u8 old_state = wcd->clsh_state;
 	u8 new_state;
+
+	if (wcd->hph_class_ab) {
+		if (event == WCD9330_CLSH_PRE_DAC && enable)
+			wcd9330_hph_class_ab(comp, wcd, true);
+		else if (event == WCD9330_CLSH_POST_PA && !enable)
+			wcd9330_hph_class_ab(comp, wcd, false);
+		return;
+	}
 
 	if (event == WCD9330_CLSH_PRE_DAC) {
 		if (!enable)
@@ -1618,6 +1674,8 @@ static int wcd9330_parse_dt(struct wcd9330_codec *wcd)
 
 	wcd->insert_inverted = of_property_read_bool(dev->of_node,
 					"qcom,mbhc-insert-detect-inverted");
+	wcd->hph_class_ab = of_property_read_bool(dev->of_node,
+						  "qcom,hph-class-ab");
 	wcd->irq = of_irq_get(dev->of_node, 0);
 	return 0;
 }
