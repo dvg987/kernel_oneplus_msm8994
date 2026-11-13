@@ -355,6 +355,17 @@ config QCOM_A7PLL
 	  Say Y if you want to support higher CPU frequencies on SDX55 and SDX65
 	  devices.
 
+config QCOM_CLK_CPU_MSM8994
+	tristate "MSM8994 CPU Clock Controller"
+	depends on ARCH_QCOM || COMPILE_TEST
+	select MFD_SYSCON
+	select REGMAP_MMIO
+	help
+	  Support for the CPU clock controller of MSM8994: the PLLs and
+	  muxes that clock its Cortex-A53 and Cortex-A57 clusters.
+	  Say Y or M if you want CPU frequency scaling on MSM8994 devices,
+	  such as the OnePlus 2, together with cpufreq-dt.
+
 config QCOM_CLK_APCS_MSM8916
 	tristate "MSM8916 APCS Clock Controller"
 	depends on QCOM_APCS_IPC || COMPILE_TEST
