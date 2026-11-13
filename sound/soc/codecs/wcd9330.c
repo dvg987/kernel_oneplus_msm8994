@@ -355,11 +355,13 @@ static int wcd9330_codec_dsm_mux_event(struct snd_soc_dapm_widget *w,
 #define WCD9330_CLSH_HPHL		(1 << 1)
 #define WCD9330_CLSH_HPHR		(1 << 2)
 #define WCD9330_CLSH_HPH_ST		(WCD9330_CLSH_HPHL | WCD9330_CLSH_HPHR)
+#define WCD9330_CLSH_EAR		(1 << 0)
 #define WCD9330_CLSH_PRE_DAC		0x01
 #define WCD9330_CLSH_POST_PA		0x02
 #define WCD9330_NCP_FCLK8		0
 #define WCD9330_NCP_FCLK5		1
 #define WCD9330_BUCK_VREF_0P494V	0x3f
+#define WCD9330_BUCK_VREF_2V		0xff
 #define WCD9330_BUCK_SETTLE_US		50
 #define WCD9330_NCP_SETTLE_US		50
 
@@ -457,6 +459,32 @@ static void wcd9330_cfg_clsh_param_hph(struct snd_soc_component *comp)
 	wcd9330_update_set(comp, reg_set, ARRAY_SIZE(reg_set));
 }
 
+/* 3.10 wcd9xxx_cfg_clsh_param_ear, for a 10.7 ohm earpiece */
+static void wcd9330_cfg_clsh_param_ear(struct snd_soc_component *comp)
+{
+	static const struct wcd9330_reg_mask_val reg_set[] = {
+		{ TOMTOM_A_CDC_CLSH_B1_CTL, 0x80, 0x00 },
+		{ TOMTOM_A_CDC_CLSH_V_PA_HD_EAR, 0x3f, 0x0d },
+		{ TOMTOM_A_CDC_CLSH_V_PA_MIN_EAR, 0x3f, 0x3a },
+		{ TOMTOM_A_CDC_CLSH_IDLE_EAR_THSD, 0x3f, 0x26 },
+		{ TOMTOM_A_CDC_CLSH_FCLKONLY_EAR_THSD, 0x3f, 0x2c },
+		{ TOMTOM_A_CDC_CLSH_I_PA_FACT_EAR_L, 0xff, 0xa9 },
+		{ TOMTOM_A_CDC_CLSH_I_PA_FACT_EAR_U, 0xff, 0x07 },
+		{ TOMTOM_A_CDC_CLSH_K_ADDR, 0x80, 0x00 },
+		{ TOMTOM_A_CDC_CLSH_K_ADDR, 0x0f, 0x08 },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x1b },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x00 },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x2d },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x00 },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x36 },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x00 },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x37 },
+		{ TOMTOM_A_CDC_CLSH_K_DATA, 0xff, 0x00 },
+	};
+
+	wcd9330_update_set(comp, reg_set, ARRAY_SIZE(reg_set));
+}
+
 static void wcd9330_clsh_comp_req(struct snd_soc_component *comp, int shift,
 				  bool on)
 {
@@ -545,6 +573,29 @@ static void wcd9330_clsh_state_hph(struct snd_soc_component *comp,
 	}
 }
 
+/* 3.10 wcd9xxx_clsh_state_ear */
+static void wcd9330_clsh_state_ear(struct snd_soc_component *comp,
+				   struct wcd9330_codec *wcd, bool enable)
+{
+	if (enable) {
+		wcd9330_cfg_clsh_param_common(comp);
+		wcd9330_cfg_clsh_param_ear(comp);
+		wcd9330_enable_clsh_block(comp, wcd, true);
+		wcd9330_chargepump_request(comp, wcd, true);
+		wcd9330_enable_anc_delay(comp, true);
+		wcd9330_clsh_comp_req(comp, 4, true);
+		wcd9330_set_buck_mode(comp, WCD9330_BUCK_VREF_2V);
+		wcd9330_enable_buck(comp, wcd, true);
+		wcd9330_set_fclk_get_ncp(comp, wcd, WCD9330_NCP_FCLK8);
+	} else {
+		wcd9330_set_fclk_put_ncp(comp, wcd, WCD9330_NCP_FCLK8);
+		wcd9330_enable_buck(comp, wcd, false);
+		wcd9330_clsh_comp_req(comp, 4, false);
+		wcd9330_chargepump_request(comp, wcd, false);
+		wcd9330_enable_clsh_block(comp, wcd, false);
+	}
+}
+
 /*
  * 3.10 wcd9xxx_enable_high_perf_mode: the headphone amplifiers in class AB,
  * on the charge pump alone, for boards whose class H buck is not usable.
@@ -598,6 +649,20 @@ static void wcd9330_clsh_fsm(struct snd_soc_component *comp, u8 req_state,
 	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
 	u8 old_state = wcd->clsh_state;
 	u8 new_state;
+
+	if (req_state == WCD9330_CLSH_EAR) {
+		if (event == WCD9330_CLSH_PRE_DAC && enable) {
+			wcd9330_clsh_state_ear(comp, wcd, true);
+			wcd->clsh_state |= WCD9330_CLSH_EAR;
+		} else if (event == WCD9330_CLSH_POST_PA && enable) {
+			wcd9330_clsh_enable_post_pa(comp, wcd);
+		} else if (event == WCD9330_CLSH_POST_PA &&
+			   (wcd->clsh_state & WCD9330_CLSH_EAR)) {
+			wcd9330_clsh_state_ear(comp, wcd, false);
+			wcd->clsh_state &= ~WCD9330_CLSH_EAR;
+		}
+		return;
+	}
 
 	if (wcd->hph_class_ab) {
 		if (event == WCD9330_CLSH_PRE_DAC && enable)
@@ -691,6 +756,43 @@ static int wcd9330_hphr_dac_event(struct snd_soc_dapm_widget *w,
 		snd_soc_component_update_bits(comp, w->reg, 0x40, 0x00);
 		wcd9330_clsh_fsm(comp, WCD9330_CLSH_HPHR, false,
 				 WCD9330_CLSH_POST_PA);
+		break;
+	}
+	return 0;
+}
+
+static int wcd9330_ear_dac_event(struct snd_soc_dapm_widget *w,
+				 struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		wcd9330_clsh_fsm(comp, WCD9330_CLSH_EAR, true,
+				 WCD9330_CLSH_PRE_DAC);
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		wcd9330_clsh_fsm(comp, WCD9330_CLSH_EAR, false,
+				 WCD9330_CLSH_POST_PA);
+		break;
+	}
+	return 0;
+}
+
+static int wcd9330_ear_pa_event(struct snd_soc_dapm_widget *w,
+				struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		/* as the headphone amplifiers: samples first */
+		msleep(TOMTOM_HPH_PA_PRE_MS);
+		break;
+	case SND_SOC_DAPM_POST_PMU:
+		wcd9330_clsh_fsm(comp, WCD9330_CLSH_EAR, true,
+				 WCD9330_CLSH_POST_PA);
+		usleep_range(5000, 5100);
 		break;
 	}
 	return 0;
@@ -838,6 +940,10 @@ static const struct snd_kcontrol_new wcd9330_snd_controls[] = {
 static int wcd9330_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 				       struct snd_kcontrol *kcontrol, int event);
 
+static const struct snd_kcontrol_new dac1_switch[] = {
+	SOC_DAPM_SINGLE("Switch", TOMTOM_A_RX_EAR_EN, 5, 1, 0)
+};
+
 static const struct snd_soc_dapm_widget wcd9330_dapm_widgets[] = {
 	SND_SOC_DAPM_AIF_IN_E("AIF1 PB", "AIF1 Playback", 0, SND_SOC_NOPM,
 			      AIF1_PB, 0, wcd9330_codec_enable_slimrx,
@@ -890,6 +996,15 @@ static const struct snd_soc_dapm_widget wcd9330_dapm_widgets[] = {
 			   SND_SOC_DAPM_PRE_PMD),
 	SND_SOC_DAPM_OUTPUT("HEADPHONE"),
 
+	SND_SOC_DAPM_MIXER_E("DAC1", TOMTOM_A_RX_EAR_EN, 6, 0, dac1_switch,
+			     ARRAY_SIZE(dac1_switch), wcd9330_ear_dac_event,
+			     SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_MIXER("EAR_PA_MIXER", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_PGA_E("EAR PA", TOMTOM_A_RX_EAR_EN, 4, 0, NULL, 0,
+			   wcd9330_ear_pa_event,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU),
+	SND_SOC_DAPM_OUTPUT("EAR"),
+
 	SND_SOC_DAPM_SUPPLY("MCLK", SND_SOC_NOPM, 0, 0,
 			    wcd9330_codec_enable_mclk,
 			    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
@@ -932,6 +1047,12 @@ static const struct snd_soc_dapm_route wcd9330_audio_map[] = {
 	{ "HPHR", NULL, "HPHR_PA_MIXER" },
 	{ "HEADPHONE", NULL, "HPHL" },
 	{ "HEADPHONE", NULL, "HPHR" },
+
+	{ "DAC1", "Switch", "CLASS_H_DSM MUX" },
+	{ "DAC1", NULL, "RX_BIAS" },
+	{ "EAR_PA_MIXER", NULL, "DAC1" },
+	{ "EAR PA", NULL, "EAR_PA_MIXER" },
+	{ "EAR", NULL, "EAR PA" },
 };
 
 static int wcd9330_set_interpolator_rate(struct snd_soc_dai *dai, u8 rx_fs)
