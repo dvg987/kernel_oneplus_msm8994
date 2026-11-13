@@ -1561,7 +1561,13 @@ static int wcd9330_codec_probe(struct snd_soc_component *component)
 		return ret;
 
 	/* 3.10 tomtom_codec_probe: 9.6 MHz in CHIP_CTL[2:1] */
-	snd_soc_component_update_bits(component, TOMTOM_A_CHIP_CTL, 0x06, 0x02);
+	snd_soc_component_write(component, TOMTOM_A_CHIP_CTL, 0x02);
+
+	/* 3.10 tomtom_enable_qfuse_sensing: load the factory trims */
+	snd_soc_component_write(component, TOMTOM_A_QFUSE_CTL, 0x03);
+	usleep_range(5000, 5500);
+	if ((snd_soc_component_read(component, TOMTOM_A_QFUSE_STATUS) & 0x03) != 0x03)
+		dev_warn(component->dev, "QFUSE sensing did not complete\n");
 	wcd9330_codec_init_reg(component);
 
 	/* 3.10 irq_init: all sources masked until set_jack unmasks JACK_SWITCH */
