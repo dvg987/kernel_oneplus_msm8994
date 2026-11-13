@@ -66,6 +66,7 @@ struct wcd9330_dai_data {
 	struct slim_stream_runtime *sruntime;
 	bool slim_prepared;
 	bool slim_on;
+	u16 port_payload;
 };
 
 struct wcd9330_codec {
@@ -270,11 +271,17 @@ static int wcd9330_codec_enable_rx_bias(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+struct wcd9330_dai_data;
+static int wcd9330_slim_start_checked(struct wcd9330_codec *wcd,
+				      struct wcd9330_dai_data *dai_data);
+
 static int wcd9330_codec_enable_interpolator(struct snd_soc_dapm_widget *w,
 					     struct snd_kcontrol *kcontrol,
 					     int event)
 {
 	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+	int ret;
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -284,6 +291,15 @@ static int wcd9330_codec_enable_interpolator(struct snd_soc_dapm_widget *w,
 					      1 << w->shift, 0);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
+		/*
+		 * The RX ports only drain once the interpolators are
+		 * clocked, and a port that fills up before that stays full:
+		 * connect them now. The DACs and the amplifiers, which need
+		 * samples flowing to ramp up, power up after this.
+		 */
+		ret = wcd9330_slim_start_checked(wcd, &wcd->dai[AIF1_PB]);
+		if (ret)
+			return ret;
 		/*
 		 * 3.10 tomtom_codec_enable_interpolator: apply the
 		 * digital gain after the interpolator is enabled.
@@ -687,6 +703,10 @@ static int wcd9330_hph_pa_event(struct snd_soc_dapm_widget *w,
 	u8 req = (w->shift == 5) ? WCD9330_CLSH_HPHL : WCD9330_CLSH_HPHR;
 
 	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		/* the amplifiers only ramp up with samples flowing */
+		msleep(TOMTOM_HPH_PA_PRE_MS);
+		break;
 	case SND_SOC_DAPM_POST_PMU:
 		usleep_range(TOMTOM_HPH_PA_SETTLE_US,
 			     TOMTOM_HPH_PA_SETTLE_US + 1000);
@@ -815,8 +835,13 @@ static const struct snd_kcontrol_new wcd9330_snd_controls[] = {
 	SOC_SINGLE_TLV("HPHR Volume", TOMTOM_A_RX_HPH_R_GAIN, 0, 20, 1, line_gain),
 };
 
+static int wcd9330_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
+				       struct snd_kcontrol *kcontrol, int event);
+
 static const struct snd_soc_dapm_widget wcd9330_dapm_widgets[] = {
-	SND_SOC_DAPM_AIF_IN("AIF1 PB", "AIF1 Playback", 0, SND_SOC_NOPM, 0, 0),
+	SND_SOC_DAPM_AIF_IN_E("AIF1 PB", "AIF1 Playback", 0, SND_SOC_NOPM,
+			      AIF1_PB, 0, wcd9330_codec_enable_slimrx,
+			      SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 
 	SND_SOC_DAPM_MUX("SLIM RX1 MUX", SND_SOC_NOPM, 0, 0, &slim_rx_mux[0]),
 	SND_SOC_DAPM_MUX("SLIM RX2 MUX", SND_SOC_NOPM, 1, 0, &slim_rx_mux[1]),
@@ -857,10 +882,12 @@ static const struct snd_soc_dapm_widget wcd9330_dapm_widgets[] = {
 	SND_SOC_DAPM_MIXER("HPHR_PA_MIXER", SND_SOC_NOPM, 0, 0, NULL, 0),
 	SND_SOC_DAPM_PGA_E("HPHL", TOMTOM_A_RX_HPH_CNP_EN, 5, 0, NULL, 0,
 			   wcd9330_hph_pa_event,
-			   SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD),
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_PRE_PMD),
 	SND_SOC_DAPM_PGA_E("HPHR", TOMTOM_A_RX_HPH_CNP_EN, 4, 0, NULL, 0,
 			   wcd9330_hph_pa_event,
-			   SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD),
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_PRE_PMD),
 	SND_SOC_DAPM_OUTPUT("HEADPHONE"),
 
 	SND_SOC_DAPM_SUPPLY("MCLK", SND_SOC_NOPM, 0, 0,
@@ -984,6 +1011,7 @@ static void wcd9330_slim_stop(struct wcd9330_dai_data *dai_data)
 static int wcd9330_slim_prepare(struct wcd9330_codec *wcd,
 				struct wcd9330_dai_data *dai_data)
 {
+	struct wcd9330_slim_ch *ch;
 	int ret;
 
 	if (!dai_data->sruntime)
@@ -992,6 +1020,19 @@ static int wcd9330_slim_prepare(struct wcd9330_codec *wcd,
 		return 0;
 
 	wcd9330_enable_int_port(wcd, dai_data);
+	/* 3.10 wcd9xxx_cfg_slim_sch_rx: the ports open as they are connected */
+	list_for_each_entry(ch, &dai_data->slim_ch_list, list) {
+		ret = regmap_write(wcd->if_regmap,
+				   TOMTOM_SB_PGD_RX_PORT_MULTI_CHNL_0(ch->port),
+				   dai_data->port_payload);
+		if (ret)
+			return ret;
+		ret = regmap_write(wcd->if_regmap,
+				   TOMTOM_SB_PGD_RX_PORT_CFG(ch->port),
+				   TOMTOM_SLAVE_PORT_WATER_MARK_VAL);
+		if (ret)
+			return ret;
+	}
 	ret = slim_stream_prepare(dai_data->sruntime, &dai_data->sconfig);
 	if (ret) {
 		dev_err(wcd->dev, "slim_stream_prepare: %d\n", ret);
@@ -1025,6 +1066,49 @@ static int wcd9330_slim_start(struct wcd9330_codec *wcd,
 	return 0;
 }
 
+/*
+ * A port that took data before the codec drained it stays full for the rest
+ * of the stream (bit 6 of its status in the interface device). Connecting
+ * again clears it.
+ */
+static int wcd9330_slim_start_checked(struct wcd9330_codec *wcd,
+				      struct wcd9330_dai_data *dai_data)
+{
+	struct wcd9330_slim_ch *ch;
+	unsigned int val, interp = 0;
+	int ret, tries;
+
+	if (dai_data->slim_on)
+		return 0;
+
+	/* a port whose interpolator is off (mono playback) stays full */
+	regmap_read(wcd->regmap, TOMTOM_A_CDC_CLK_RX_B1_CTL, &interp);
+
+	for (tries = 0; tries < 4; tries++) {
+		bool full = false;
+
+		ret = wcd9330_slim_start(wcd, dai_data);
+		if (ret)
+			return ret;
+		usleep_range(5000, 6000);
+		list_for_each_entry(ch, &dai_data->slim_ch_list, list) {
+			if (!(interp & BIT(ch->port - TOMTOM_RX_PORT_START)))
+				continue;
+			val = 0;
+			regmap_read(wcd->if_regmap,
+				    TOMTOM_SB_PGD_RX_PORT_STATUS(ch->port), &val);
+			if (val & TOMTOM_SB_PGD_PORT_FULL)
+				full = true;
+		}
+		if (!full)
+			return 0;
+		dev_dbg(wcd->dev, "RX port full, connecting again\n");
+		wcd9330_slim_stop(dai_data);
+	}
+	dev_warn(wcd->dev, "RX ports stayed full\n");
+	return wcd9330_slim_start(wcd, dai_data);
+}
+
 static int wcd9330_slim_set_hw_params(struct wcd9330_codec *wcd,
 				      struct wcd9330_dai_data *dai_data)
 {
@@ -1032,6 +1116,10 @@ static int wcd9330_slim_set_hw_params(struct wcd9330_codec *wcd,
 	struct wcd9330_slim_ch *ch;
 	u16 payload = 0;
 	int ret, i;
+
+	/* still streaming: the channels stay as they are */
+	if (dai_data->slim_on)
+		return 0;
 
 	wcd9330_slim_stop(dai_data);
 	if (dai_data->sruntime) {
@@ -1056,17 +1144,8 @@ static int wcd9330_slim_set_hw_params(struct wcd9330_codec *wcd,
 	i = 0;
 	list_for_each_entry(ch, &dai_data->slim_ch_list, list) {
 		cfg->chs[i++] = ch->ch_num;
-		ret = regmap_write(wcd->if_regmap,
-				   TOMTOM_SB_PGD_RX_PORT_MULTI_CHNL_0(ch->port),
-				   payload);
-		if (ret)
-			goto err;
-		ret = regmap_write(wcd->if_regmap,
-				   TOMTOM_SB_PGD_RX_PORT_CFG(ch->port),
-				   TOMTOM_SLAVE_PORT_WATER_MARK_VAL);
-		if (ret)
-			goto err;
 	}
+	dai_data->port_payload = payload;
 
 	dai_data->sruntime = slim_stream_allocate(wcd->slim, "WCD9330-SLIM");
 	if (IS_ERR(dai_data->sruntime)) {
@@ -1143,7 +1222,6 @@ static int wcd9330_hw_params(struct snd_pcm_substream *substream,
 {
 	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(dai->component);
 	u8 rx_fs;
-	int ret;
 
 	switch (params_rate(params)) {
 	case 8000:
@@ -1172,57 +1250,24 @@ static int wcd9330_hw_params(struct snd_pcm_substream *substream,
 	wcd9330_set_rxsb_port_format(params, dai);
 	wcd->dai[dai->id].sconfig.rate = params_rate(params);
 	wcd->dai[dai->id].sconfig.bps = params_width(params);
-	ret = wcd9330_slim_set_hw_params(wcd, &wcd->dai[dai->id]);
-	if (ret)
-		return ret;
-	/* CONNECT_SINK before q6afe_dai_prepare starts SLIMBUS_0_RX */
-	return wcd9330_slim_prepare(wcd, &wcd->dai[dai->id]);
-}
-
-static int wcd9330_trigger(struct snd_pcm_substream *substream, int cmd,
-			   struct snd_soc_dai *dai)
-{
-	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(dai->component);
-	struct wcd9330_dai_data *dai_data = &wcd->dai[dai->id];
-
-	switch (cmd) {
-	case SNDRV_PCM_TRIGGER_START:
-	case SNDRV_PCM_TRIGGER_RESUME:
-	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
-		return wcd9330_slim_start(wcd, dai_data);
-	case SNDRV_PCM_TRIGGER_STOP:
-	case SNDRV_PCM_TRIGGER_SUSPEND:
-	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		wcd9330_slim_stop(dai_data);
-		break;
-	}
-	return 0;
+	return wcd9330_slim_set_hw_params(wcd, &wcd->dai[dai->id]);
 }
 
 /*
- * Runs in __soc_pcm_prepare before snd_soc_pcm_dai_prepare, so
- * DEF_ACT_CHAN is up before q6afe_port_start. 3.10 does the same
- * work in AIF POST_PMU, which is after afe_port_start.
+ * The ports are connected from the interpolator events (see there); the AIF
+ * disconnects them when it powers down, after everything else.
  */
-static int wcd9330_component_prepare(struct snd_soc_component *comp,
-				     struct snd_pcm_substream *substream)
+static int wcd9330_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
+				       struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
 	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
-	struct snd_soc_dai *dai;
-	int i, ret;
+	struct wcd9330_dai_data *dai_data = &wcd->dai[w->shift];
 
-	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)
-		return 0;
-
-	for_each_rtd_codec_dais(rtd, i, dai) {
-		if (dai->component != comp)
-			continue;
-		if (dai->id < 0 || dai->id >= NUM_CODEC_DAIS)
-			continue;
-		ret = wcd9330_slim_start(wcd, &wcd->dai[dai->id]);
-		if (ret)
-			return ret;
+	switch (event) {
+	case SND_SOC_DAPM_POST_PMD:
+		wcd9330_slim_stop(dai_data);
+		break;
 	}
 	return 0;
 }
@@ -1264,7 +1309,6 @@ static int wcd9330_get_channel_map(const struct snd_soc_dai *dai,
 
 static const struct snd_soc_dai_ops wcd9330_dai_ops = {
 	.hw_params = wcd9330_hw_params,
-	.trigger = wcd9330_trigger,
 	.set_channel_map = wcd9330_set_channel_map,
 	.get_channel_map = wcd9330_get_channel_map,
 };
@@ -1638,7 +1682,6 @@ static int wcd9330_codec_probe(struct snd_soc_component *component)
 
 static const struct snd_soc_component_driver wcd9330_component_drv = {
 	.probe = wcd9330_codec_probe,
-	.prepare = wcd9330_component_prepare,
 	.controls = wcd9330_snd_controls,
 	.num_controls = ARRAY_SIZE(wcd9330_snd_controls),
 	.dapm_widgets = wcd9330_dapm_widgets,
