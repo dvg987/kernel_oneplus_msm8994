@@ -66,7 +66,7 @@ static int calibrate_v1(struct tsens_priv *priv)
 	return 0;
 }
 
-/* v1.x: msm8956,8976,qcs404,405 */
+/* v1.x: msm8956,8976,8994,qcs404,405 */
 
 static struct tsens_features tsens_v1_feat = {
 	.ver_major	= VER_1_X,
@@ -75,6 +75,17 @@ static struct tsens_features tsens_v1_feat = {
 	.adc		= 1,
 	.srot_split	= 1,
 	.max_sensors	= 11,
+	.trip_min_temp	= -40000,
+	.trip_max_temp	= 120000,
+};
+
+static struct tsens_features tsens_8994_feat = {
+	.ver_major	= VER_1_X,
+	.crit_int	= 0,
+	.combo_int	= 0,
+	.adc		= 1,
+	.srot_split	= 1,
+	.max_sensors	= 16,
 	.trip_min_temp	= -40000,
 	.trip_max_temp	= 120000,
 };
@@ -106,12 +117,12 @@ static const struct reg_field tsens_v1_regfields[MAX_REGFIELDS] = {
 	[INT_EN]     = REG_FIELD(TM_INT_EN_OFF, 0, 0),
 
 	/* UPPER/LOWER TEMPERATURE THRESHOLDS */
-	REG_FIELD_FOR_EACH_SENSOR11(LOW_THRESH,    TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF,  0,  9),
-	REG_FIELD_FOR_EACH_SENSOR11(UP_THRESH,     TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF, 10, 19),
+	REG_FIELD_FOR_EACH_SENSOR16(LOW_THRESH,    TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF,  0,  9),
+	REG_FIELD_FOR_EACH_SENSOR16(UP_THRESH,     TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF, 10, 19),
 
 	/* UPPER/LOWER INTERRUPTS [CLEAR/STATUS] */
-	REG_FIELD_FOR_EACH_SENSOR11(LOW_INT_CLEAR, TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF, 20, 20),
-	REG_FIELD_FOR_EACH_SENSOR11(UP_INT_CLEAR,  TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF, 21, 21),
+	REG_FIELD_FOR_EACH_SENSOR16(LOW_INT_CLEAR, TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF, 20, 20),
+	REG_FIELD_FOR_EACH_SENSOR16(UP_INT_CLEAR,  TM_Sn_UPPER_LOWER_STATUS_CTRL_OFF, 21, 21),
 	[LOW_INT_STATUS_0] = REG_FIELD(TM_HIGH_LOW_INT_STATUS_OFF,  0,  0),
 	[LOW_INT_STATUS_1] = REG_FIELD(TM_HIGH_LOW_INT_STATUS_OFF,  1,  1),
 	[LOW_INT_STATUS_2] = REG_FIELD(TM_HIGH_LOW_INT_STATUS_OFF,  2,  2),
@@ -132,14 +143,14 @@ static const struct reg_field tsens_v1_regfields[MAX_REGFIELDS] = {
 	/* NO CRITICAL INTERRUPT SUPPORT on v1 */
 
 	/* Sn_STATUS */
-	REG_FIELD_FOR_EACH_SENSOR11(LAST_TEMP,    TM_Sn_STATUS_OFF,  0,  9),
-	REG_FIELD_FOR_EACH_SENSOR11(VALID,        TM_Sn_STATUS_OFF, 14, 14),
+	REG_FIELD_FOR_EACH_SENSOR16(LAST_TEMP,    TM_Sn_STATUS_OFF,  0,  9),
+	REG_FIELD_FOR_EACH_SENSOR16(VALID,        TM_Sn_STATUS_OFF, 14, 14),
 	/* xxx_STATUS bits: 1 == threshold violated */
-	REG_FIELD_FOR_EACH_SENSOR11(MIN_STATUS,   TM_Sn_STATUS_OFF, 10, 10),
-	REG_FIELD_FOR_EACH_SENSOR11(LOWER_STATUS, TM_Sn_STATUS_OFF, 11, 11),
-	REG_FIELD_FOR_EACH_SENSOR11(UPPER_STATUS, TM_Sn_STATUS_OFF, 12, 12),
+	REG_FIELD_FOR_EACH_SENSOR16(MIN_STATUS,   TM_Sn_STATUS_OFF, 10, 10),
+	REG_FIELD_FOR_EACH_SENSOR16(LOWER_STATUS, TM_Sn_STATUS_OFF, 11, 11),
+	REG_FIELD_FOR_EACH_SENSOR16(UPPER_STATUS, TM_Sn_STATUS_OFF, 12, 12),
 	/* No CRITICAL field on v1.x */
-	REG_FIELD_FOR_EACH_SENSOR11(MAX_STATUS,   TM_Sn_STATUS_OFF, 13, 13),
+	REG_FIELD_FOR_EACH_SENSOR16(MAX_STATUS,   TM_Sn_STATUS_OFF, 13, 13),
 
 	/* TRDY: 1=ready, 0=in progress */
 	[TRDY] = REG_FIELD(TM_TRDY_OFF, 0, 0),
@@ -240,6 +251,25 @@ struct tsens_plat_data data_8976 = {
 	.num_sensors	= 11,
 	.ops		= &ops_common,
 	.feat		= &tsens_v1_feat,
+	.fields		= tsens_v1_regfields,
+};
+
+/* The MSM8994 fuses hold 10 bit codes: no shift */
+static int calibrate_8994(struct tsens_priv *priv)
+{
+	return tsens_calibrate_nvmem(priv, 0);
+}
+
+static const struct tsens_ops ops_8994 = {
+	.init		= init_common,
+	.calibrate	= calibrate_8994,
+	.get_temp	= get_temp_tsens_valid,
+};
+
+struct tsens_plat_data data_8994 = {
+	.num_sensors	= 16,
+	.ops		= &ops_8994,
+	.feat		= &tsens_8994_feat,
 	.fields		= tsens_v1_regfields,
 };
 

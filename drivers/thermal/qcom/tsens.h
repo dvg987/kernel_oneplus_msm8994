@@ -670,6 +670,7 @@ extern struct tsens_plat_data data_8226, data_8909, data_8916, data_8939, data_8
 
 /* TSENS v1 targets */
 extern struct tsens_plat_data data_tsens_v1, data_8937, data_8976, data_8956;
+extern struct tsens_plat_data data_8994;
 
 /* TSENS v1 with no RPM targets */
 extern const struct tsens_plat_data data_ipq5018;
