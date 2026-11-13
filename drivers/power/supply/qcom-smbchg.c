@@ -2146,6 +2146,13 @@ static int smbchg_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, chip);
+
+	/*
+	 * A cable already in at probe raises no source-detect edge: run
+	 * the insertion path now (APSD, port type, D+), or the gadget does
+	 * not connect until the cable is replugged.
+	 */
+	smbchg_queue_src_det(chip);
 	return 0;
 
 put_batt_info:
