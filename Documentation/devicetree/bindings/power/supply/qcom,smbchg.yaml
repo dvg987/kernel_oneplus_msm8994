@@ -33,6 +33,32 @@ properties:
       voltage-max-design-microvolt.
       See Documentation/devicetree/bindings/power/supply/battery.yaml
 
+  qcom,temp-zones:
+    $ref: /schemas/types.yaml#/definitions/int32-matrix
+    description: |
+      Float voltage and charge current by battery temperature, as the
+      fuel gauge reports it. Zones are listed by rising temperature; each
+      one covers the temperatures above the previous zone up to its own
+      upper bound. Above the last zone there is no charging. A charge
+      current of 0 also means no charging.
+    minItems: 1
+    maxItems: 16
+    items:
+      items:
+        - description: Upper bound of the zone, in tenths of a degree Celsius
+        - description: Float voltage in microvolts
+          minimum: 0
+        - description: Constant charge current in microamps, 0 for none
+          minimum: 0
+
+  qcom,temp-hysteresis:
+    $ref: /schemas/types.yaml#/definitions/uint32
+    description:
+      How far, in tenths of a degree Celsius, the temperature must come
+      back past a zone boundary before the charger moves back towards the
+      zone with the highest charge current.
+    default: 20
+
   interrupts:
     items:
       - description: Charger error
