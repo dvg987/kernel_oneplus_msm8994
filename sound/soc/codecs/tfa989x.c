@@ -7,6 +7,7 @@
  * Copyright (C) 2013 Sony Mobile Communications Inc.
  */
 
+#include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
@@ -318,6 +319,7 @@ static int tfa989x_i2c_probe(struct i2c_client *i2c)
 {
 	struct device *dev = &i2c->dev;
 	const struct tfa989x_rev *rev;
+	struct gpio_desc *reset_gpiod;
 	struct tfa989x *tfa989x;
 	struct regmap *regmap;
 	unsigned int val;
@@ -341,6 +343,11 @@ static int tfa989x_i2c_probe(struct i2c_client *i2c)
 		return dev_err_probe(dev, PTR_ERR(tfa989x->vddd_supply),
 				     "Failed to get vddd regulator\n");
 
+	reset_gpiod = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(reset_gpiod))
+		return dev_err_probe(dev, PTR_ERR(reset_gpiod),
+				     "Failed to get reset GPIO\n");
+
 	if (tfa989x->rev->rev == TFA9897_REVISION) {
 		tfa989x->rcv_gpiod = devm_gpiod_get_optional(dev, "rcv", GPIOD_OUT_LOW);
 		if (IS_ERR(tfa989x->rcv_gpiod))
@@ -360,6 +367,13 @@ static int tfa989x_i2c_probe(struct i2c_client *i2c)
 	ret = devm_add_action_or_reset(dev, tfa989x_regulator_disable, tfa989x);
 	if (ret)
 		return ret;
+
+	if (reset_gpiod) {
+		gpiod_set_value_cansleep(reset_gpiod, 1);
+		usleep_range(5000, 6000);
+		gpiod_set_value_cansleep(reset_gpiod, 0);
+		usleep_range(5000, 6000);
+	}
 
 	/* Bypass regcache for reset and init sequence */
 	regcache_cache_bypass(regmap, true);
