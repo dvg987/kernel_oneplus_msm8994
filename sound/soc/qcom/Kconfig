@@ -169,10 +169,11 @@ config SND_SOC_MSM8996
 
 config SND_SOC_MSM8994
 	tristate "SoC Machine driver for MSM8994 boards"
-	depends on QCOM_APR
+	depends on QCOM_APR && SLIMBUS
 	depends on COMMON_CLK
 	select SND_SOC_QDSP6
 	select SND_SOC_QCOM_COMMON
+	select SND_SOC_WCD9330
 	help
 	  Support for Qualcomm Technologies LPASS audio block in
 	  MSM8994 SoC-based systems.
