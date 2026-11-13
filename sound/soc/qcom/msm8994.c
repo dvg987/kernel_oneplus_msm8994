@@ -220,6 +220,11 @@ static void msm8994_add_be_ops(struct snd_soc_card *card)
 		if (link->no_pcm == 1) {
 			link->be_hw_params_fixup = msm8994_be_hw_params_fixup;
 			link->ops = &msm8994_ops;
+			/*
+			 * The WCD9330 only starts cleanly from a full
+			 * power-up sequence: no power-down delay.
+			 */
+			link->ignore_pmdown_time = 1;
 			if (link->id != QUATERNARY_MI2S_RX)
 				link->init = msm8994_init;
 		}
