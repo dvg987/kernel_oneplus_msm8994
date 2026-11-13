@@ -93,7 +93,9 @@
 			no-map;
 		};
 
+		/* the ADSP's audio buffers (q6asm), shared with it through the TZ */
 		audio_mem: memory@df400000 {
+			compatible = "shared-dma-pool";
 			reg = <0 0xdf400000 0 0x800000>;
 			no-map;
 		};
@@ -1464,5 +1466,86 @@
 				};
 			};
 		};
+	};
+};
+
+/*
+ * Audio: the ADSP plays through QUAT MI2S (SD0) into the NXP TFA9890 speaker
+ * amplifier on BLSP2 I2C5 (stock: qcom,msm-mi2s-rx-lines = <1>).
+ */
+/ {
+	sound {
+		compatible = "qcom,msm8994-sndcard";
+		model = "OnePlus2";
+
+		reg = <0x0 0xfe037000 0x0 0x4>;
+		reg-names = "lpaif_quat_mode_muxsel";
+
+		pinctrl-0 = <&quat_mi2s_rx_default>;
+		pinctrl-names = "default";
+
+		mm1-dai-link {
+			link-name = "MultiMedia1";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+			};
+		};
+
+		speaker-dai-link {
+			link-name = "Speaker";
+
+			cpu {
+				sound-dai = <&q6afedai QUATERNARY_MI2S_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&speaker_amp>;
+			};
+		};
+	};
+};
+
+/* loaded where the stock PIL puts it; the image is relocatable */
+&adsp_pil {
+	memory-region = <&peripheral_region>;
+	firmware-name = "qcom/msm8994/oneplus/oneplus2/adsp.mbn";
+};
+
+&blsp2_i2c5 {
+	/* stock runs this bus at 100 kHz */
+	clock-frequency = <100000>;
+	status = "okay";
+
+	speaker_amp: audio-amplifier@36 {
+		compatible = "nxp,tfa9890";
+		reg = <0x36>;
+		reset-gpios = <&tlmm 106 GPIO_ACTIVE_HIGH>;
+		vddd-supply = <&vreg_s4a_1p8>;
+		sound-name-prefix = "Speaker";
+		#sound-dai-cells = <0>;
+	};
+};
+
+&q6afedai {
+	dai@22 {
+		qcom,sd-lines = <0>;
+	};
+};
+
+&q6asmdai {
+	memory-region = <&audio_mem>;
+};
+
+&tlmm {
+	quat_mi2s_rx_default: quat-mi2s-rx-default-state {
+		pins = "gpio58", "gpio59", "gpio60";
+		function = "qua_mi2s";
+		drive-strength = <8>;
+		bias-disable;
 	};
 };
