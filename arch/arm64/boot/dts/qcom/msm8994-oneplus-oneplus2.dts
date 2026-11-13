@@ -16,6 +16,7 @@
 #include <dt-bindings/input/gpio-keys.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/thermal/thermal.h>
 
 /* placed as the stock kernel places them */
 /delete-node/ &audio_mem;
@@ -790,4 +791,678 @@
 	qcom,temp-hysteresis = <20>;
 
 	status = "okay";
+};
+
+&cpucc {
+	/*
+	 * The CPU rails above 1.0 V need VDD_MX at its top corner
+	 * (stock qcom,vdd-mx-corner-map of the CPR regulators).
+	 */
+	power-domains = <&rpmpd MSM8994_VDDMX>;
+	required-opps = <&rpmpd_opp_super_turbo>;
+};
+
+/*
+ * CPU frequency scaling.  Frequencies and voltages are the stock v2 tables
+ * (qcom,a53/a57-speedbin0-v0 and the CPR ceiling of each corner): the stock
+ * kernel never runs a frequency above its ceiling voltage, and CPR is not
+ * modelled here, so each step gets the ceiling itself.  Nothing goes below
+ * the 1.0 V the bootloader leaves: lower corners need other memory
+ * accelerator settings, and the CCI runs from the Cortex-A53 rail.
+ * The top stock steps (Cortex-A57 above 1536 MHz, 1.225 V) are left out:
+ * the SoC idles around 60 C and resets itself at 115 C.
+ */
+/ {
+	cpu0_opp_table: opp-table-cluster0 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-384000000 {
+			opp-hz = /bits/ 64 <384000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-460800000 {
+			opp-hz = /bits/ 64 <460800000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-672000000 {
+			opp-hz = /bits/ 64 <672000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-768000000 {
+			opp-hz = /bits/ 64 <768000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-864000000 {
+			opp-hz = /bits/ 64 <864000000>;
+			opp-microvolt = <1115000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-960000000 {
+			opp-hz = /bits/ 64 <960000000>;
+			opp-microvolt = <1115000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1248000000 {
+			opp-hz = /bits/ 64 <1248000000>;
+			opp-microvolt = <1180000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1344000000 {
+			opp-hz = /bits/ 64 <1344000000>;
+			opp-microvolt = <1180000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1478400000 {
+			opp-hz = /bits/ 64 <1478400000>;
+			opp-microvolt = <1180000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1555200000 {
+			opp-hz = /bits/ 64 <1555200000>;
+			opp-microvolt = <1180000>;
+			clock-latency-ns = <300000>;
+		};
+	};
+
+	cpu4_opp_table: opp-table-cluster1 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-384000000 {
+			opp-hz = /bits/ 64 <384000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-480000000 {
+			opp-hz = /bits/ 64 <480000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-633600000 {
+			opp-hz = /bits/ 64 <633600000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-768000000 {
+			opp-hz = /bits/ 64 <768000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-864000000 {
+			opp-hz = /bits/ 64 <864000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-960000000 {
+			opp-hz = /bits/ 64 <960000000>;
+			opp-microvolt = <1000000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1248000000 {
+			opp-hz = /bits/ 64 <1248000000>;
+			opp-microvolt = <1160000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1344000000 {
+			opp-hz = /bits/ 64 <1344000000>;
+			opp-microvolt = <1160000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1440000000 {
+			opp-hz = /bits/ 64 <1440000000>;
+			opp-microvolt = <1160000>;
+			clock-latency-ns = <300000>;
+		};
+		opp-1536000000 {
+			opp-hz = /bits/ 64 <1536000000>;
+			opp-microvolt = <1160000>;
+			clock-latency-ns = <300000>;
+		};
+	};
+};
+
+&pm8994_spmi_regulators {
+	/* VDD_APC0: Cortex-A53 cluster and CCI */
+	vdd_apc0: s8 {
+		regulator-min-microvolt = <1000000>;
+		regulator-max-microvolt = <1180000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	/* VDD_APC1: Cortex-A57 cluster, S11 leads S9 and S10 */
+	vdd_apc1: s11 {
+		regulator-min-microvolt = <1000000>;
+		regulator-max-microvolt = <1160000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+};
+
+&cpu0 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	cpu-supply = <&vdd_apc0>;
+};
+
+&cpu1 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	cpu-supply = <&vdd_apc0>;
+};
+
+&cpu2 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	cpu-supply = <&vdd_apc0>;
+};
+
+&cpu3 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu0_opp_table>;
+	cpu-supply = <&vdd_apc0>;
+};
+
+&cpu4 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu4_opp_table>;
+	cpu-supply = <&vdd_apc1>;
+};
+
+&cpu5 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu4_opp_table>;
+	cpu-supply = <&vdd_apc1>;
+};
+
+&cpu6 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu4_opp_table>;
+	cpu-supply = <&vdd_apc1>;
+};
+
+&cpu7 {
+	#cooling-cells = <2>;
+	operating-points-v2 = <&cpu4_opp_table>;
+	cpu-supply = <&vdd_apc1>;
+};
+
+/*
+ * The SoC already reaches the mid 90s C during boot at 768 MHz and resets
+ * itself at 115 C, so each cluster is limited in narrow bands from the
+ * sensor next to each of its cores: from 80 C down to 1248 MHz, from 90 C
+ * to 864 or 768 MHz (the rate the boot firmware leaves), from 100 C down
+ * to the lowest step.
+ */
+/ {
+	thermal-zones {
+		cpu0-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 7>;
+
+			trips {
+				cpu0_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu0_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu0_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu0-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu0_alert0>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT 3>,
+						 <&cpu1 THERMAL_NO_LIMIT 3>,
+						 <&cpu2 THERMAL_NO_LIMIT 3>,
+						 <&cpu3 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu0_alert1>;
+					cooling-device = <&cpu0 4 6>,
+						 <&cpu1 4 6>,
+						 <&cpu2 4 6>,
+						 <&cpu3 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu0_alert2>;
+					cooling-device = <&cpu0 7 THERMAL_NO_LIMIT>,
+						 <&cpu1 7 THERMAL_NO_LIMIT>,
+						 <&cpu2 7 THERMAL_NO_LIMIT>,
+						 <&cpu3 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu1-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 8>;
+
+			trips {
+				cpu1_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu1_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu1_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu1-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu1_alert0>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT 3>,
+						 <&cpu1 THERMAL_NO_LIMIT 3>,
+						 <&cpu2 THERMAL_NO_LIMIT 3>,
+						 <&cpu3 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu1_alert1>;
+					cooling-device = <&cpu0 4 6>,
+						 <&cpu1 4 6>,
+						 <&cpu2 4 6>,
+						 <&cpu3 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu1_alert2>;
+					cooling-device = <&cpu0 7 THERMAL_NO_LIMIT>,
+						 <&cpu1 7 THERMAL_NO_LIMIT>,
+						 <&cpu2 7 THERMAL_NO_LIMIT>,
+						 <&cpu3 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu2-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 9>;
+
+			trips {
+				cpu2_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu2_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu2_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu2-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu2_alert0>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT 3>,
+						 <&cpu1 THERMAL_NO_LIMIT 3>,
+						 <&cpu2 THERMAL_NO_LIMIT 3>,
+						 <&cpu3 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu2_alert1>;
+					cooling-device = <&cpu0 4 6>,
+						 <&cpu1 4 6>,
+						 <&cpu2 4 6>,
+						 <&cpu3 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu2_alert2>;
+					cooling-device = <&cpu0 7 THERMAL_NO_LIMIT>,
+						 <&cpu1 7 THERMAL_NO_LIMIT>,
+						 <&cpu2 7 THERMAL_NO_LIMIT>,
+						 <&cpu3 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu3-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 10>;
+
+			trips {
+				cpu3_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu3_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu3_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu3-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu3_alert0>;
+					cooling-device = <&cpu0 THERMAL_NO_LIMIT 3>,
+						 <&cpu1 THERMAL_NO_LIMIT 3>,
+						 <&cpu2 THERMAL_NO_LIMIT 3>,
+						 <&cpu3 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu3_alert1>;
+					cooling-device = <&cpu0 4 6>,
+						 <&cpu1 4 6>,
+						 <&cpu2 4 6>,
+						 <&cpu3 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu3_alert2>;
+					cooling-device = <&cpu0 7 THERMAL_NO_LIMIT>,
+						 <&cpu1 7 THERMAL_NO_LIMIT>,
+						 <&cpu2 7 THERMAL_NO_LIMIT>,
+						 <&cpu3 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu4-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 13>;
+
+			trips {
+				cpu4_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu4_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu4_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu4-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu4_alert0>;
+					cooling-device = <&cpu4 THERMAL_NO_LIMIT 3>,
+						 <&cpu5 THERMAL_NO_LIMIT 3>,
+						 <&cpu6 THERMAL_NO_LIMIT 3>,
+						 <&cpu7 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu4_alert1>;
+					cooling-device = <&cpu4 4 6>,
+						 <&cpu5 4 6>,
+						 <&cpu6 4 6>,
+						 <&cpu7 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu4_alert2>;
+					cooling-device = <&cpu4 7 THERMAL_NO_LIMIT>,
+						 <&cpu5 7 THERMAL_NO_LIMIT>,
+						 <&cpu6 7 THERMAL_NO_LIMIT>,
+						 <&cpu7 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu5-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 14>;
+
+			trips {
+				cpu5_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu5_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu5_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu5-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu5_alert0>;
+					cooling-device = <&cpu4 THERMAL_NO_LIMIT 3>,
+						 <&cpu5 THERMAL_NO_LIMIT 3>,
+						 <&cpu6 THERMAL_NO_LIMIT 3>,
+						 <&cpu7 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu5_alert1>;
+					cooling-device = <&cpu4 4 6>,
+						 <&cpu5 4 6>,
+						 <&cpu6 4 6>,
+						 <&cpu7 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu5_alert2>;
+					cooling-device = <&cpu4 7 THERMAL_NO_LIMIT>,
+						 <&cpu5 7 THERMAL_NO_LIMIT>,
+						 <&cpu6 7 THERMAL_NO_LIMIT>,
+						 <&cpu7 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu6-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 15>;
+
+			trips {
+				cpu6_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu6_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu6_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu6-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu6_alert0>;
+					cooling-device = <&cpu4 THERMAL_NO_LIMIT 3>,
+						 <&cpu5 THERMAL_NO_LIMIT 3>,
+						 <&cpu6 THERMAL_NO_LIMIT 3>,
+						 <&cpu7 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu6_alert1>;
+					cooling-device = <&cpu4 4 6>,
+						 <&cpu5 4 6>,
+						 <&cpu6 4 6>,
+						 <&cpu7 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu6_alert2>;
+					cooling-device = <&cpu4 7 THERMAL_NO_LIMIT>,
+						 <&cpu5 7 THERMAL_NO_LIMIT>,
+						 <&cpu6 7 THERMAL_NO_LIMIT>,
+						 <&cpu7 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+
+		cpu7-thermal {
+			polling-delay-passive = <100>;
+			polling-delay = <0>;
+			thermal-sensors = <&tsens 6>;
+
+			trips {
+				cpu7_alert0: trip-point0 {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu7_alert1: trip-point1 {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu7_alert2: trip-point2 {
+					temperature = <100000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu7-crit {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu7_alert0>;
+					cooling-device = <&cpu4 THERMAL_NO_LIMIT 3>,
+						 <&cpu5 THERMAL_NO_LIMIT 3>,
+						 <&cpu6 THERMAL_NO_LIMIT 3>,
+						 <&cpu7 THERMAL_NO_LIMIT 3>;
+				};
+
+				map1 {
+					trip = <&cpu7_alert1>;
+					cooling-device = <&cpu4 4 6>,
+						 <&cpu5 4 6>,
+						 <&cpu6 4 6>,
+						 <&cpu7 4 6>;
+				};
+
+				map2 {
+					trip = <&cpu7_alert2>;
+					cooling-device = <&cpu4 7 THERMAL_NO_LIMIT>,
+						 <&cpu5 7 THERMAL_NO_LIMIT>,
+						 <&cpu6 7 THERMAL_NO_LIMIT>,
+						 <&cpu7 7 THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+	};
 };
