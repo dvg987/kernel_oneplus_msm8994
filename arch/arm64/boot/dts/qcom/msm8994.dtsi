@@ -1692,6 +1692,15 @@
 		};
 
 
+		slim: slim-ngd@fe12f000 {
+			compatible = "qcom,slim-ngd-v1.5.0";
+			reg = <0xfe12f000 0x2c000>;
+			interrupts = <GIC_SPI 163 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
 		adsp_pil: remoteproc@fe200000 {
 			compatible = "qcom,msm8994-adsp-pil";
 			reg = <0xfe200000 0x80000>;
