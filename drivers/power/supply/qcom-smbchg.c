@@ -1014,6 +1014,16 @@ static void smbchg_usb_gadget_softconnect(bool connect)
 
 	if (!gadget)
 		return;
+	/*
+	 * Not bound to a gadget driver yet: leave the pull-up to the gadget
+	 * core.  A connect before the bind only records "connected", and
+	 * the connect the bind does then returns early without pulling D+
+	 * up: the gadget stays off the bus until VBUS is replugged.
+	 */
+	if (!gadget->dev.driver) {
+		put_device(&gadget->dev);
+		return;
+	}
 	if (connect)
 		usb_gadget_connect(gadget);
 	else
