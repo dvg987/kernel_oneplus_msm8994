@@ -764,8 +764,11 @@
 	 * there to have the battery ID resistor measured and logged.
 	 */
 	monitored-battery = <&battery>;
-	qcom,batt-id-kohm = <50>;
-	qcom,batt-id-range-pct = <30>;
+	/* ATL 3300 mAh (the SDI cell reads 50 kOhm and shows as unknown) */
+	qcom,battery-type = "ATL";
+	qcom,batt-id-kohm = <1>;
+	/* the ID reads in whole kOhm: accept 0..2 */
+	qcom,batt-id-range-pct = <100>;
 	status = "okay";
 };
 
