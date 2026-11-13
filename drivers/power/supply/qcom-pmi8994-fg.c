@@ -710,9 +710,12 @@ static int fg_get_property(struct power_supply *psy,
 		rc = fg_refresh_telem(fg);
 		if (rc)
 			return rc;
-		/* Magnitude: UPower 1.91 treats current_now < 0 as discharge. */
-		val->intval = fg->current_ua < 0 ? -fg->current_ua
-						 : fg->current_ua;
+		/*
+		 * The gauge counts discharge as positive (the vendor driver
+		 * takes below -200 mA as charging); the ABI wants charging
+		 * positive and discharging negative.
+		 */
+		val->intval = -fg->current_ua;
 		return 0;
 	case POWER_SUPPLY_PROP_TEMP:
 		rc = fg_refresh_telem(fg);
