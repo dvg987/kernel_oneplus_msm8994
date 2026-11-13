@@ -7,7 +7,6 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
-#include <linux/sysfs.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmaengine.h>
@@ -180,7 +179,6 @@ struct qcom_slim_ngd_ctrl {
 	int tx_head;
 	int irq;
 	bool irq_enabled;
-	bool hw_attached;
 	u32 ver;
 	/* 3.10 msm_send_msg_buf register path when TX MSGQ is off */
 	u32 tx_reg_buf[10];
@@ -1501,6 +1499,13 @@ static int qcom_slim_ngd_qmi_new_server(struct qmi_handle *hdl,
 		service->node, service->port);
 	complete(&ctrl->qmi_up);
 
+	/*
+	 * An ADSP that is already running when this driver probes, or one
+	 * without protection domains, gives no SSR or PDR event to bring the
+	 * controller up on: its SLIMbus service showing up does.
+	 */
+	schedule_work(&ctrl->ngd_up_work);
+
 	return 0;
 }
 
@@ -1578,6 +1583,10 @@ static void qcom_slim_ngd_up_worker(struct work_struct *work)
 	struct qcom_slim_ngd_ctrl *ctrl;
 
 	ctrl = container_of(work, struct qcom_slim_ngd_ctrl, ngd_up_work);
+
+	/* already up: the QMI service and an SSR event both get here */
+	if (ctrl->qmi.handle)
+		return;
 
 	/* Make sure qmi service is up before continuing */
 	if (!wait_for_completion_interruptible_timeout(&ctrl->qmi_up,
@@ -1763,7 +1772,6 @@ static int qcom_slim_ngd_ctrl_hw_attach(struct platform_device *pdev,
 		ret = PTR_ERR(ctrl->notifier);
 		goto err_unregister_ngd;
 	}
-	ctrl->hw_attached = true;
 
 	return 0;
 
@@ -1778,88 +1786,10 @@ err_destroy_mwq:
 	return ret;
 }
 
-static ssize_t ngd_hw_show(struct device *dev, struct device_attribute *attr,
-			   char *buf)
-{
-	struct qcom_slim_ngd_ctrl *ctrl = dev_get_drvdata(dev);
-
-	return sysfs_emit(buf, "%d\n", ctrl->hw_attached);
-}
-
-static ssize_t ngd_hw_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	struct qcom_slim_ngd_ctrl *ctrl = dev_get_drvdata(dev);
-	struct platform_device *pdev = to_platform_device(dev);
-	bool on;
-	int ret;
-
-	ret = kstrtobool(buf, &on);
-	if (ret)
-		return ret;
-	if (!on)
-		return -EINVAL;
-
-	mutex_lock(&ctrl->ssr_lock);
-	if (ctrl->hw_attached) {
-		mutex_unlock(&ctrl->ssr_lock);
-		return -EBUSY;
-	}
-	ret = qcom_slim_ngd_ctrl_hw_attach(pdev, ctrl);
-	mutex_unlock(&ctrl->ssr_lock);
-	if (ret)
-		return ret;
-
-	return count;
-}
-
-static DEVICE_ATTR_RW(ngd_hw);
-
-static ssize_t ngd_up_show(struct device *dev, struct device_attribute *attr,
-			   char *buf)
-{
-	struct qcom_slim_ngd_ctrl *ctrl = dev_get_drvdata(dev);
-
-	return sysfs_emit(buf, "%d\n", ctrl->qmi.handle ? 1 : 0);
-}
-
-static ssize_t ngd_up_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	struct qcom_slim_ngd_ctrl *ctrl = dev_get_drvdata(dev);
-	bool on;
-	int ret;
-
-	ret = kstrtobool(buf, &on);
-	if (ret)
-		return ret;
-	if (!on)
-		return -EINVAL;
-	if (!ctrl->hw_attached)
-		return -ENODEV;
-
-	if (!wait_for_completion_timeout(&ctrl->qmi_up, 2 * HZ)) {
-		dev_dbg(ctrl->dev, "QMI svc node=%u port=%u (no new_server)\n",
-			ctrl->qmi.svc_info.sq_node, ctrl->qmi.svc_info.sq_port);
-		return -ETIMEDOUT;
-	}
-
-	mutex_lock(&ctrl->ssr_lock);
-	ret = qcom_slim_ngd_enable(ctrl, true);
-	mutex_unlock(&ctrl->ssr_lock);
-	if (ret)
-		return ret;
-
-	return count;
-}
-
-static DEVICE_ATTR_RW(ngd_up);
-
 static int qcom_slim_ngd_ctrl_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct qcom_slim_ngd_ctrl *ctrl;
-	int ret;
 
 	ctrl = devm_kzalloc(dev, sizeof(*ctrl), GFP_KERNEL);
 	if (!ctrl)
@@ -1890,26 +1820,12 @@ static int qcom_slim_ngd_ctrl_probe(struct platform_device *pdev)
 	INIT_WORK(&ctrl->m_work, qcom_slim_ngd_master_worker);
 	INIT_WORK(&ctrl->ngd_up_work, qcom_slim_ngd_up_worker);
 
-	ret = device_create_file(dev, &dev_attr_ngd_hw);
-	if (ret)
-		return ret;
-	ret = device_create_file(dev, &dev_attr_ngd_up);
-	if (ret) {
-		device_remove_file(dev, &dev_attr_ngd_hw);
-		return ret;
-	}
-
-	return 0;
+	return qcom_slim_ngd_ctrl_hw_attach(pdev, ctrl);
 }
 
 static void qcom_slim_ngd_ctrl_remove(struct platform_device *pdev)
 {
 	struct qcom_slim_ngd_ctrl *ctrl = platform_get_drvdata(pdev);
-
-	device_remove_file(&pdev->dev, &dev_attr_ngd_up);
-	device_remove_file(&pdev->dev, &dev_attr_ngd_hw);
-	if (!ctrl->hw_attached)
-		return;
 
 	pdr_handle_release(ctrl->pdr);
 	qcom_unregister_ssr_notifier(ctrl->notifier, &ctrl->nb);
