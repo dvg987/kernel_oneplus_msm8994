@@ -57,6 +57,9 @@
 /* susclk rate */
 #define SUSCLK_RATE_32KHZ	32768
 
+/* Time a ROME controller has to be held disabled to go through a reset */
+#define QCA_ROME_RESET_MS		1000
+
 /* Controller debug log header */
 #define QCA_DEBUG_HANDLE	0x2EDC
 
@@ -1870,6 +1873,10 @@ static int qca_power_on(struct hci_dev *hdev)
 	default:
 		qcadev = serdev_device_get_drvdata(hu->serdev);
 		if (qcadev->bt_en) {
+			if (soc_type == QCA_ROME) {
+				gpiod_set_value_cansleep(qcadev->bt_en, 0);
+				msleep(QCA_ROME_RESET_MS);
+			}
 			gpiod_set_value_cansleep(qcadev->bt_en, 1);
 			/* Controller needs time to bootup. */
 			msleep(150);
