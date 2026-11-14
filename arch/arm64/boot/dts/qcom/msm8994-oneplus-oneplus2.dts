@@ -483,6 +483,8 @@
 		vreg_l28a_1p0: l28 {
 			regulator-min-microvolt = <1000000>;
 			regulator-max-microvolt = <1000000>;
+			regulator-allow-set-load;
+			regulator-system-load = <40000>;
 		};
 
 		vreg_l29a_2p8: l29 {
@@ -493,6 +495,7 @@
 		vreg_l30a_1p8: l30 {
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
+			regulator-always-on;
 		};
 
 		vreg_l31a_1p2: l31 {
@@ -1667,5 +1670,71 @@
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
+	};
+};
+
+/ {
+	vreg_wlan_bt_3p3: wlan-bt-3p3-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "wlan_bt_3p3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&pm8994_gpios 9 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <4000>;
+		regulator-always-on;
+		vin-supply = <&vph_pwr>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wlan_bt_3p3_en_default>;
+	};
+
+	vreg_wlan_en: wlan-en-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "wlan_en";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&tlmm 113 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <70000>;
+		vin-supply = <&vreg_wlan_bt_3p3>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wlan_en_default>;
+	};
+};
+
+&pcie1 {
+	vdda-supply = <&vreg_l28a_1p0>;
+	status = "okay";
+};
+
+&pcie1_phy {
+	vdda-phy-supply = <&vreg_l28a_1p0>;
+	vdda-pll-supply = <&vreg_l12a_1p8>;
+	status = "okay";
+};
+
+&pcie1_port {
+	compatible = "pciclass,0604";
+	reset-gpios = <&tlmm 35 GPIO_ACTIVE_LOW>;
+	wake-gpios = <&tlmm 37 GPIO_ACTIVE_LOW>;
+	vpcie3v3-supply = <&vreg_wlan_en>;
+};
+
+&pm8994_gpios {
+	wlan_bt_3p3_en_default: wlan-bt-3p3-en-default-state {
+		pins = "gpio9";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8994_GPIO_VPH>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_HIGH>;
+		bias-disable;
+	};
+};
+
+&tlmm {
+	wlan_en_default: wlan-en-default-state {
+		pins = "gpio113";
+		function = "gpio";
+		drive-strength = <16>;
+		bias-pull-down;
 	};
 };
