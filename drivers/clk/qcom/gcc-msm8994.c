@@ -1839,9 +1839,9 @@ static struct clk_branch gcc_pcie_1_aux_clk = {
 };
 
 static struct clk_branch gcc_pcie_1_cfg_ahb_clk = {
-	.halt_reg = 0x1b54,
+	.halt_reg = 0x1b50,
 	.clkr = {
-		.enable_reg = 0x1b54,
+		.enable_reg = 0x1b50,
 		.enable_mask = BIT(0),
 		.hw.init = &(struct clk_init_data){
 			.name = "gcc_pcie_1_cfg_ahb_clk",
@@ -1851,9 +1851,9 @@ static struct clk_branch gcc_pcie_1_cfg_ahb_clk = {
 };
 
 static struct clk_branch gcc_pcie_1_mstr_axi_clk = {
-	.halt_reg = 0x1b50,
+	.halt_reg = 0x1b4c,
 	.clkr = {
-		.enable_reg = 0x1b50,
+		.enable_reg = 0x1b4c,
 		.enable_mask = BIT(0),
 		.hw.init = &(struct clk_init_data){
 			.name = "gcc_pcie_1_mstr_axi_clk",
