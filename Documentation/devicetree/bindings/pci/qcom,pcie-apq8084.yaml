@@ -14,6 +14,7 @@ properties:
   compatible:
     enum:
       - qcom,pcie-apq8084
+      - qcom,pcie-msm8994
 
   reg:
     minItems: 4
