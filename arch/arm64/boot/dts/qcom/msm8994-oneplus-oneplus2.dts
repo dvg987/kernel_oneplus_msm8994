@@ -1479,6 +1479,10 @@
 		compatible = "qcom,msm8994-sndcard";
 		model = "OnePlus2";
 
+		audio-routing = "AMIC2", "MIC BIAS2",
+				"AMIC3", "MIC BIAS3",
+				"AMIC4", "MIC BIAS1";
+
 		reg = <0x0 0xfe037000 0x0 0x4>;
 		reg-names = "lpaif_quat_mode_muxsel";
 
@@ -1490,6 +1494,14 @@
 
 			cpu {
 				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+			};
+		};
+
+		mm2-dai-link {
+			link-name = "MultiMedia2";
+
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
 			};
 		};
 
@@ -1522,6 +1534,22 @@
 
 			codec {
 				sound-dai = <&wcd9330 0>;
+			};
+		};
+
+		microphones-dai-link {
+			link-name = "Microphones";
+
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_0_TX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&wcd9330 1>;
 			};
 		};
 	};
@@ -1617,6 +1645,9 @@
 
 			qcom,mbhc-insert-detect-inverted;
 			qcom,hph-class-ab;
+			qcom,micbias1-microvolt = <1800000>;
+			qcom,micbias2-microvolt = <2700000>;
+			qcom,micbias3-microvolt = <1800000>;
 
 			#sound-dai-cells = <1>;
 		};
