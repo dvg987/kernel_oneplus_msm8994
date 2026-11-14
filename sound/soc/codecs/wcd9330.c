@@ -949,9 +949,9 @@ static const struct snd_kcontrol_new hphl_switch[] = {
 
 static const struct snd_kcontrol_new wcd9330_snd_controls[] = {
 	SOC_SINGLE_SX_TLV("RX1 Digital Volume", TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL,
-			  0, -84, 40, digital_gain),
+			  0, -84, 124, digital_gain),
 	SOC_SINGLE_SX_TLV("RX2 Digital Volume", TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL,
-			  0, -84, 40, digital_gain),
+			  0, -84, 124, digital_gain),
 	SOC_SINGLE_SX_TLV("DEC3 Volume", TOMTOM_A_CDC_TX1_VOL_CTL_GAIN + 8 * 2,
 			  0, -84, 124, digital_gain),
 	SOC_SINGLE_SX_TLV("DEC4 Volume", TOMTOM_A_CDC_TX1_VOL_CTL_GAIN + 8 * 3,
