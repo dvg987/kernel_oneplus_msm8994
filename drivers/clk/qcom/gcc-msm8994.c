@@ -2648,6 +2648,10 @@ static const struct qcom_reset_map gcc_msm8994_resets[] = {
 	[QUSB2_PHY_RESET] = { 0x04b8 },
 	[USB2_HS_PHY_ONLY_RESET] = { 0x04b0 },
 	[USB_30_RESET] = { 0x03c0 },
+	[PCIE_0_RESET] = { 0x1ac0 },
+	[PCIE_1_RESET] = { 0x1b40 },
+	[PCIE_PHY_0_PHY_RESET] = { 0x1b14 },
+	[PCIE_PHY_1_PHY_RESET] = { 0x1b94 },
 };
 
 static const struct regmap_config gcc_msm8994_regmap_config = {
