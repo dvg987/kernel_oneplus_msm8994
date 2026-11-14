@@ -17,6 +17,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/slimbus.h>
 #include <linux/string.h>
+#include <linux/workqueue.h>
 #include <sound/jack.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -31,10 +32,12 @@
 				 SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_192000)
 #define WCD9330_FORMATS		(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE)
 
+#define TOMTOM_SLIM_TX_CH(p)	{ .port = (p), .shift = (p) }
 #define TOMTOM_SLIM_RX_CH(p)	{ .port = (p) + TOMTOM_RX_PORT_START, .shift = (p) }
 
 enum {
 	AIF1_PB,
+	AIF1_CAP,
 	NUM_CODEC_DAIS,
 };
 
@@ -69,6 +72,15 @@ struct wcd9330_dai_data {
 	u16 port_payload;
 };
 
+struct wcd9330_codec;
+
+struct wcd9330_hpf {
+	struct wcd9330_codec *wcd;
+	struct delayed_work work;
+	u8 decimator;
+	u8 cutoff;
+};
+
 struct wcd9330_codec {
 	struct device *dev;
 	struct slim_device *slim;
@@ -95,6 +107,12 @@ struct wcd9330_codec {
 	struct wcd9330_slim_ch rx_chs[TOMTOM_RX_MAX];
 	struct wcd9330_dai_data dai[NUM_CODEC_DAIS];
 	int num_rx_port;
+	int tx_port_value[TOMTOM_TX_MAX];
+	struct wcd9330_slim_ch tx_chs[TOMTOM_TX_MAX];
+	struct wcd9330_hpf hpf[TOMTOM_NUM_DECIMATORS];
+	int adc_users;
+	u8 txfe_pending;
+	u32 micbias_uv[3];
 };
 
 /*
@@ -125,6 +143,7 @@ static const struct wcd9330_slim_ch wcd9330_rx_chs[TOMTOM_RX_MAX] = {
 /* 3.10 wcd9330.c: digital_gain / line_gain */
 static const DECLARE_TLV_DB_SCALE(digital_gain, 0, 1, 0);
 static const DECLARE_TLV_DB_SCALE(line_gain, 0, 700, 1);
+static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 25, 1);
 
 /* 3.10 rx_digital_gain_reg — RX1/RX2 only on this DAI */
 static const u16 wcd9330_rx_digital_gain_reg[] = {
@@ -933,11 +952,278 @@ static const struct snd_kcontrol_new wcd9330_snd_controls[] = {
 			  0, -84, 40, digital_gain),
 	SOC_SINGLE_SX_TLV("RX2 Digital Volume", TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL,
 			  0, -84, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC3 Volume", TOMTOM_A_CDC_TX1_VOL_CTL_GAIN + 8 * 2,
+			  0, -84, 124, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC4 Volume", TOMTOM_A_CDC_TX1_VOL_CTL_GAIN + 8 * 3,
+			  0, -84, 124, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC5 Volume", TOMTOM_A_CDC_TX1_VOL_CTL_GAIN + 8 * 4,
+			  0, -84, 124, digital_gain),
+	SOC_SINGLE_TLV("ADC2 Volume", TOMTOM_A_TX_2_GAIN, 2, 19, 0, analog_gain),
+	SOC_SINGLE_TLV("ADC3 Volume", TOMTOM_A_TX_3_GAIN, 2, 19, 0, analog_gain),
+	SOC_SINGLE_TLV("ADC4 Volume", TOMTOM_A_TX_4_GAIN, 2, 19, 0, analog_gain),
 	SOC_SINGLE_TLV("HPHL Volume", TOMTOM_A_RX_HPH_L_GAIN, 0, 20, 1, line_gain),
 	SOC_SINGLE_TLV("HPHR Volume", TOMTOM_A_RX_HPH_R_GAIN, 0, 20, 1, line_gain),
 };
 
 static int wcd9330_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
+				       struct snd_kcontrol *kcontrol, int event);
+
+/* 3.10 tomtom_codec_enable_ldo_h: the bias reference comes up first */
+static int wcd9330_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
+				      struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		wcd9330_enable_bg(wcd, true);
+		break;
+	case SND_SOC_DAPM_POST_PMU:
+		usleep_range(1000, 1100);
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		wcd9330_enable_bg(wcd, false);
+		break;
+	}
+	return 0;
+}
+
+static int wcd9330_codec_enable_micbias(struct snd_soc_dapm_widget *w,
+					struct snd_kcontrol *kcontrol, int event)
+{
+	if (event == SND_SOC_DAPM_POST_PMU)
+		usleep_range(5000, 5100);
+	return 0;
+}
+
+/* 3.10 tomtom_codec_enable_adc */
+static int wcd9330_codec_enable_adc(struct snd_soc_dapm_widget *w,
+				    struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+	u16 test_reg, clkdiv_reg;
+	u8 clkdiv_mask, init, adc;
+
+	switch (w->reg) {
+	case TOMTOM_A_TX_2_GAIN:
+		test_reg = TOMTOM_A_TX_1_2_TEST_CTL;
+		clkdiv_reg = TOMTOM_A_TX_1_2_TXFE_CLKDIV;
+		clkdiv_mask = 0xf0;
+		init = BIT(6);
+		adc = 2;
+		break;
+	case TOMTOM_A_TX_3_GAIN:
+		test_reg = TOMTOM_A_TX_3_4_TEST_CTL;
+		clkdiv_reg = TOMTOM_A_TX_3_4_TXFE_CKDIV;
+		clkdiv_mask = 0x0f;
+		init = BIT(7);
+		adc = 3;
+		break;
+	case TOMTOM_A_TX_4_GAIN:
+		test_reg = TOMTOM_A_TX_3_4_TEST_CTL;
+		clkdiv_reg = TOMTOM_A_TX_3_4_TXFE_CKDIV;
+		clkdiv_mask = 0xf0;
+		init = BIT(6);
+		adc = 4;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		/* the decimator puts the divider back once it has settled */
+		snd_soc_component_update_bits(comp, clkdiv_reg, clkdiv_mask, 0);
+		wcd->txfe_pending |= BIT(adc);
+		if (wcd->adc_users++ == 0)
+			snd_soc_component_update_bits(comp,
+						      TOMTOM_A_CDC_CLK_OTHR_CTL,
+						      0x02, 0x02);
+		snd_soc_component_update_bits(comp, test_reg, init, init);
+		break;
+	case SND_SOC_DAPM_POST_PMU:
+		snd_soc_component_update_bits(comp, test_reg, init, 0);
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		if (--wcd->adc_users == 0)
+			snd_soc_component_update_bits(comp,
+						      TOMTOM_A_CDC_CLK_OTHR_CTL,
+						      0x02, 0x00);
+		break;
+	}
+	return 0;
+}
+
+/* 3.10 txfe_clkdiv_update */
+static void wcd9330_txfe_clkdiv_restore(struct wcd9330_codec *wcd)
+{
+	u8 pending = wcd->txfe_pending;
+
+	wcd->txfe_pending = 0;
+	if (pending & BIT(2))
+		regmap_update_bits(wcd->regmap, TOMTOM_A_TX_1_2_TXFE_CLKDIV,
+				   0xf0, 0x50);
+	if (pending & BIT(3))
+		regmap_update_bits(wcd->regmap, TOMTOM_A_TX_3_4_TXFE_CKDIV,
+				   0x0f, 0x05);
+	if (pending & BIT(4))
+		regmap_update_bits(wcd->regmap, TOMTOM_A_TX_3_4_TXFE_CKDIV,
+				   0xf0, 0x50);
+}
+
+/* 3.10 tx_hpf_corner_freq_callback */
+static void wcd9330_hpf_work(struct work_struct *work)
+{
+	struct wcd9330_hpf *hpf = container_of(to_delayed_work(work),
+					       struct wcd9330_hpf, work);
+	struct wcd9330_codec *wcd = hpf->wcd;
+
+	wcd9330_txfe_clkdiv_restore(wcd);
+	regmap_update_bits(wcd->regmap,
+			   TOMTOM_A_CDC_TX1_MUX_CTL + 8 * hpf->decimator,
+			   0x30, hpf->cutoff << 4);
+}
+
+/*
+ * 3.10 tomtom_codec_enable_dec. The decimator starts muted with the high-pass
+ * filter at 150 Hz so that it settles quickly; the filter goes back to its
+ * corner 300 ms later.
+ */
+static int wcd9330_codec_enable_dec(struct snd_soc_dapm_widget *w,
+				    struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+	struct wcd9330_hpf *hpf = &wcd->hpf[w->shift];
+	u16 gain_reg = TOMTOM_A_CDC_TX1_VOL_CTL_GAIN + 8 * w->shift;
+	u16 cfg_reg = TOMTOM_A_CDC_TX1_VOL_CTL_CFG + 8 * w->shift;
+	u16 mux_reg = TOMTOM_A_CDC_TX1_MUX_CTL + 8 * w->shift;
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		snd_soc_component_update_bits(comp, cfg_reg, 0x01, 0x01);
+		snd_soc_component_update_bits(comp,
+					      TOMTOM_A_CDC_CLK_TX_RESET_B1_CTL,
+					      BIT(w->shift), BIT(w->shift));
+		snd_soc_component_update_bits(comp,
+					      TOMTOM_A_CDC_CLK_TX_RESET_B1_CTL,
+					      BIT(w->shift), 0);
+		hpf->cutoff = (snd_soc_component_read(comp, mux_reg) & 0x30) >> 4;
+		if (hpf->cutoff != TOMTOM_TX_HPF_150HZ)
+			snd_soc_component_update_bits(comp, mux_reg, 0x30,
+						      TOMTOM_TX_HPF_150HZ << 4);
+		snd_soc_component_update_bits(comp, mux_reg, 0x08, 0x00);
+		break;
+	case SND_SOC_DAPM_POST_PMU:
+		snd_soc_component_update_bits(comp, cfg_reg, 0x01, 0x00);
+		schedule_delayed_work(&hpf->work, msecs_to_jiffies(300));
+		/* the gain only takes effect once the decimator runs */
+		snd_soc_component_write(comp, gain_reg,
+					snd_soc_component_read(comp, gain_reg));
+		break;
+	case SND_SOC_DAPM_PRE_PMD:
+		snd_soc_component_update_bits(comp, cfg_reg, 0x01, 0x01);
+		if (cancel_delayed_work_sync(&hpf->work))
+			wcd9330_txfe_clkdiv_restore(wcd);
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		snd_soc_component_update_bits(comp, mux_reg, 0x08, 0x08);
+		snd_soc_component_update_bits(comp, mux_reg, 0x30,
+					      hpf->cutoff << 4);
+		break;
+	}
+	return 0;
+}
+
+static int slim_tx_mixer_get(struct snd_kcontrol *kc,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_to_widget(kc);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(
+					snd_soc_dapm_to_component(w->dapm));
+	struct soc_mixer_control *mixer =
+			(struct soc_mixer_control *)kc->private_value;
+
+	ucontrol->value.integer.value[0] =
+			wcd->tx_port_value[mixer->shift] == w->shift;
+	return 0;
+}
+
+static int slim_tx_mixer_put(struct snd_kcontrol *kc,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_dapm_widget *w = snd_soc_dapm_kcontrol_to_widget(kc);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(
+					snd_soc_dapm_to_component(w->dapm));
+	struct soc_mixer_control *mixer =
+			(struct soc_mixer_control *)kc->private_value;
+	int enable = !!ucontrol->value.integer.value[0];
+	int dai_id = w->shift;
+	int port_id = mixer->shift;
+
+	if (enable && wcd->tx_port_value[port_id] != dai_id) {
+		wcd->tx_port_value[port_id] = dai_id;
+		list_add_tail(&wcd->tx_chs[port_id].list,
+			      &wcd->dai[dai_id].slim_ch_list);
+	} else if (!enable && wcd->tx_port_value[port_id] == dai_id) {
+		wcd->tx_port_value[port_id] = -1;
+		list_del_init(&wcd->tx_chs[port_id].list);
+	} else {
+		return 0;
+	}
+
+	snd_soc_dapm_mixer_update_power(w->dapm, kc, enable, NULL);
+	return 1;
+}
+
+static const struct snd_kcontrol_new aif1_cap_mixer[] = {
+	SOC_SINGLE_EXT("SLIM TX7", SND_SOC_NOPM, 6, 1, 0,
+		       slim_tx_mixer_get, slim_tx_mixer_put),
+};
+
+/* the decimators also take digital microphones, which are not handled */
+static const char * const dec3_mux_text[] = { "ZERO", "ADC4" };
+static const char * const dec4_mux_text[] = { "ZERO", "ADC3" };
+static const char * const dec5_mux_text[] = { "ZERO", "ADC2" };
+static const unsigned int dec_mux_values[] = { 0, 2 };
+
+static const struct soc_enum dec3_mux_enum =
+	SOC_VALUE_ENUM_SINGLE(TOMTOM_A_CDC_CONN_TX_B1_CTL, 4, 0x3,
+			      ARRAY_SIZE(dec3_mux_text), dec3_mux_text,
+			      dec_mux_values);
+static const struct soc_enum dec4_mux_enum =
+	SOC_VALUE_ENUM_SINGLE(TOMTOM_A_CDC_CONN_TX_B1_CTL, 6, 0x3,
+			      ARRAY_SIZE(dec4_mux_text), dec4_mux_text,
+			      dec_mux_values);
+static const struct soc_enum dec5_mux_enum =
+	SOC_VALUE_ENUM_SINGLE(TOMTOM_A_CDC_CONN_TX_B2_CTL, 0, 0x3,
+			      ARRAY_SIZE(dec5_mux_text), dec5_mux_text,
+			      dec_mux_values);
+
+static const struct snd_kcontrol_new dec3_mux =
+	SOC_DAPM_ENUM("DEC3 MUX Mux", dec3_mux_enum);
+static const struct snd_kcontrol_new dec4_mux =
+	SOC_DAPM_ENUM("DEC4 MUX Mux", dec4_mux_enum);
+static const struct snd_kcontrol_new dec5_mux =
+	SOC_DAPM_ENUM("DEC5 MUX Mux", dec5_mux_enum);
+
+/* 3.10 sb_tx7_to_tx10_mux_text: the decimators start at 8 */
+static const char * const sb_tx7_mux_text[] = {
+	"ZERO", "DEC3", "DEC4", "DEC5"
+};
+static const unsigned int sb_tx7_mux_values[] = { 0, 10, 11, 12 };
+
+static const struct soc_enum sb_tx7_mux_enum =
+	SOC_VALUE_ENUM_SINGLE(TOMTOM_A_CDC_CONN_TX_SB_B1_CTL + 6, 0, 0x1f,
+			      ARRAY_SIZE(sb_tx7_mux_text), sb_tx7_mux_text,
+			      sb_tx7_mux_values);
+
+static const struct snd_kcontrol_new sb_tx7_mux =
+	SOC_DAPM_ENUM("SLIM TX7 MUX Mux", sb_tx7_mux_enum);
+
+static int wcd9330_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 				       struct snd_kcontrol *kcontrol, int event);
 
 static const struct snd_kcontrol_new dac1_switch[] = {
@@ -1005,6 +1291,56 @@ static const struct snd_soc_dapm_widget wcd9330_dapm_widgets[] = {
 			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU),
 	SND_SOC_DAPM_OUTPUT("EAR"),
 
+	SND_SOC_DAPM_INPUT("AMIC2"),
+	SND_SOC_DAPM_INPUT("AMIC3"),
+	SND_SOC_DAPM_INPUT("AMIC4"),
+	SND_SOC_DAPM_SUPPLY("LDO_H", TOMTOM_A_LDO_H_MODE_1, 7, 0,
+			    wcd9330_codec_enable_ldo_h,
+			    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			    SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_SUPPLY("CFILT1", TOMTOM_A_MICB_CFILT_1_CTL, 7, 0, NULL, 0),
+	SND_SOC_DAPM_SUPPLY("CFILT2", TOMTOM_A_MICB_CFILT_2_CTL, 7, 0, NULL, 0),
+	SND_SOC_DAPM_SUPPLY("CFILT3", TOMTOM_A_MICB_CFILT_3_CTL, 7, 0, NULL, 0),
+	SND_SOC_DAPM_SUPPLY("MIC BIAS1", TOMTOM_A_MICB_1_CTL, 7, 0,
+			    wcd9330_codec_enable_micbias, SND_SOC_DAPM_POST_PMU),
+	SND_SOC_DAPM_SUPPLY("MIC BIAS2", TOMTOM_A_MICB_2_CTL, 7, 0,
+			    wcd9330_codec_enable_micbias, SND_SOC_DAPM_POST_PMU),
+	SND_SOC_DAPM_SUPPLY("MIC BIAS3", TOMTOM_A_MICB_3_CTL, 7, 0,
+			    wcd9330_codec_enable_micbias, SND_SOC_DAPM_POST_PMU),
+	SND_SOC_DAPM_ADC_E("ADC2", NULL, TOMTOM_A_TX_2_GAIN, 7, 0,
+			   wcd9330_codec_enable_adc,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_ADC_E("ADC3", NULL, TOMTOM_A_TX_3_GAIN, 7, 0,
+			   wcd9330_codec_enable_adc,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_ADC_E("ADC4", NULL, TOMTOM_A_TX_4_GAIN, 7, 0,
+			   wcd9330_codec_enable_adc,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_SUPPLY("CDC_CONN", TOMTOM_A_CDC_CLK_OTHR_CTL, 2, 0, NULL, 0),
+	SND_SOC_DAPM_SUPPLY("TX_I2S_CLK", TOMTOM_A_CDC_CLK_TX_I2S_CTL, 4, 0,
+			    NULL, 0),
+	SND_SOC_DAPM_MUX_E("DEC3 MUX", TOMTOM_A_CDC_CLK_TX_CLK_EN_B1_CTL, 2, 0,
+			   &dec3_mux, wcd9330_codec_enable_dec,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_MUX_E("DEC4 MUX", TOMTOM_A_CDC_CLK_TX_CLK_EN_B1_CTL, 3, 0,
+			   &dec4_mux, wcd9330_codec_enable_dec,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_MUX_E("DEC5 MUX", TOMTOM_A_CDC_CLK_TX_CLK_EN_B1_CTL, 4, 0,
+			   &dec5_mux, wcd9330_codec_enable_dec,
+			   SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
+			   SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_MUX("SLIM TX7 MUX", SND_SOC_NOPM, 0, 0, &sb_tx7_mux),
+	SND_SOC_DAPM_MIXER("AIF1_CAP Mixer", SND_SOC_NOPM, AIF1_CAP, 0,
+			   aif1_cap_mixer, ARRAY_SIZE(aif1_cap_mixer)),
+	SND_SOC_DAPM_AIF_OUT_E("AIF1 CAP", "AIF1 Capture", 0, SND_SOC_NOPM,
+			       AIF1_CAP, 0, wcd9330_codec_enable_slimtx,
+			       SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+
 	SND_SOC_DAPM_SUPPLY("MCLK", SND_SOC_NOPM, 0, 0,
 			    wcd9330_codec_enable_mclk,
 			    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
@@ -1053,6 +1389,30 @@ static const struct snd_soc_dapm_route wcd9330_audio_map[] = {
 	{ "EAR_PA_MIXER", NULL, "DAC1" },
 	{ "EAR PA", NULL, "EAR_PA_MIXER" },
 	{ "EAR", NULL, "EAR PA" },
+
+	{ "LDO_H", NULL, "MCLK" },
+	{ "MIC BIAS1", NULL, "LDO_H" },
+	{ "MIC BIAS1", NULL, "CFILT1" },
+	{ "MIC BIAS2", NULL, "LDO_H" },
+	{ "MIC BIAS2", NULL, "CFILT2" },
+	{ "MIC BIAS3", NULL, "LDO_H" },
+	{ "MIC BIAS3", NULL, "CFILT3" },
+	{ "ADC2", NULL, "AMIC2" },
+	{ "ADC3", NULL, "AMIC3" },
+	{ "ADC4", NULL, "AMIC4" },
+	{ "DEC3 MUX", "ADC4", "ADC4" },
+	{ "DEC3 MUX", NULL, "CDC_CONN" },
+	{ "DEC4 MUX", "ADC3", "ADC3" },
+	{ "DEC4 MUX", NULL, "CDC_CONN" },
+	{ "DEC5 MUX", "ADC2", "ADC2" },
+	{ "DEC5 MUX", NULL, "CDC_CONN" },
+	{ "SLIM TX7 MUX", "DEC3", "DEC3 MUX" },
+	{ "SLIM TX7 MUX", "DEC4", "DEC4 MUX" },
+	{ "SLIM TX7 MUX", "DEC5", "DEC5 MUX" },
+	{ "SLIM TX7 MUX", NULL, "TX_I2S_CLK" },
+	{ "AIF1_CAP Mixer", "SLIM TX7", "SLIM TX7 MUX" },
+	{ "AIF1 CAP", NULL, "AIF1_CAP Mixer" },
+	{ "AIF1 CAP", NULL, "MCLK" },
 };
 
 static int wcd9330_set_interpolator_rate(struct snd_soc_dai *dai, u8 rx_fs)
@@ -1088,6 +1448,58 @@ static int wcd9330_set_interpolator_rate(struct snd_soc_dai *dai, u8 rx_fs)
 	return 0;
 }
 
+/* 3.10 tomtom_set_decimator_rate: the decimators that feed the TX ports */
+static int wcd9330_set_decimator_rate(struct snd_soc_dai *dai, u8 tx_fs)
+{
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(dai->component);
+	struct snd_soc_component *comp = dai->component;
+	struct wcd9330_slim_ch *ch;
+	unsigned int val, decimator;
+
+	list_for_each_entry(ch, &wcd->dai[dai->id].slim_ch_list, list) {
+		val = snd_soc_component_read(comp,
+				TOMTOM_A_CDC_CONN_TX_SB_B1_CTL + ch->port);
+		if (ch->port < 6) {
+			if ((val & 0x0f) != 0x8)
+				continue;
+			decimator = ch->port;
+		} else {
+			val &= 0x1f;
+			if (val < 0x8 || val > 0x11)
+				continue;
+			decimator = val - 0x8;
+		}
+		snd_soc_component_update_bits(comp,
+				TOMTOM_A_CDC_TX1_CLK_FS_CTL + 8 * decimator,
+				0x07, tx_fs);
+	}
+	return 0;
+}
+
+/* 3.10 tomtom_set_tx_sb_port_format */
+static void wcd9330_set_txsb_port_format(struct snd_pcm_hw_params *params,
+					 struct snd_soc_dai *dai)
+{
+	struct snd_soc_component *comp = dai->component;
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+	struct wcd9330_slim_ch *ch;
+	u8 bit_sel, shift;
+
+	bit_sel = params_format(params) == SNDRV_PCM_FORMAT_S16_LE ? 0x2 : 0x0;
+
+	list_for_each_entry(ch, &wcd->dai[dai->id].slim_ch_list, list) {
+		if (ch->port < 6)
+			shift = 4;
+		else if (ch->port < 10)
+			shift = 5;
+		else
+			continue;
+		snd_soc_component_update_bits(comp,
+				TOMTOM_A_CDC_CONN_TX_SB_B1_CTL + ch->port,
+				0x3 << shift, bit_sel << shift);
+	}
+}
+
 /* 3.10 tomtom_codec_enable_int_port — IFD PORT_INT_EN0 for RX ports. */
 static void wcd9330_enable_int_port(struct wcd9330_codec *wcd,
 				    struct wcd9330_dai_data *dai)
@@ -1098,8 +1510,13 @@ static void wcd9330_enable_int_port(struct wcd9330_codec *wcd,
 	int port_num;
 
 	list_for_each_entry(ch, &dai->slim_ch_list, list) {
-		port_num = ch->port - TOMTOM_RX_PORT_START;
-		reg = TOMTOM_SB_PGD_PORT_INT_EN0 + (port_num / 8);
+		if (ch->port >= TOMTOM_RX_PORT_START) {
+			port_num = ch->port - TOMTOM_RX_PORT_START;
+			reg = TOMTOM_SB_PGD_PORT_INT_EN0 + (port_num / 8);
+		} else {
+			port_num = ch->port;
+			reg = TOMTOM_SB_PGD_PORT_INT_TX_EN0 + (port_num / 8);
+		}
 		regmap_read(wcd->if_regmap, reg, &val);
 		if (!(val & BIT(port_num % 8)))
 			regmap_write(wcd->if_regmap, reg,
@@ -1143,13 +1560,32 @@ static int wcd9330_slim_prepare(struct wcd9330_codec *wcd,
 	wcd9330_enable_int_port(wcd, dai_data);
 	/* 3.10 wcd9xxx_cfg_slim_sch_rx: the ports open as they are connected */
 	list_for_each_entry(ch, &dai_data->slim_ch_list, list) {
+		if (ch->port >= TOMTOM_RX_PORT_START) {
+			ret = regmap_write(wcd->if_regmap,
+				TOMTOM_SB_PGD_RX_PORT_MULTI_CHNL_0(ch->port),
+				dai_data->port_payload);
+			if (ret)
+				return ret;
+			ret = regmap_write(wcd->if_regmap,
+					   TOMTOM_SB_PGD_RX_PORT_CFG(ch->port),
+					   TOMTOM_SLAVE_PORT_WATER_MARK_VAL);
+			if (ret)
+				return ret;
+			continue;
+		}
+		/* 3.10 wcd9xxx_cfg_slim_sch_tx */
 		ret = regmap_write(wcd->if_regmap,
-				   TOMTOM_SB_PGD_RX_PORT_MULTI_CHNL_0(ch->port),
-				   dai_data->port_payload);
+				   TOMTOM_SB_PGD_TX_PORT_MULTI_CHNL_0(ch->port),
+				   dai_data->port_payload & 0xff);
 		if (ret)
 			return ret;
 		ret = regmap_write(wcd->if_regmap,
-				   TOMTOM_SB_PGD_RX_PORT_CFG(ch->port),
+				   TOMTOM_SB_PGD_TX_PORT_MULTI_CHNL_1(ch->port),
+				   dai_data->port_payload >> 8);
+		if (ret)
+			return ret;
+		ret = regmap_write(wcd->if_regmap,
+				   TOMTOM_SB_PGD_TX_PORT_CFG(ch->port),
 				   TOMTOM_SLAVE_PORT_WATER_MARK_VAL);
 		if (ret)
 			return ret;
@@ -1231,7 +1667,8 @@ static int wcd9330_slim_start_checked(struct wcd9330_codec *wcd,
 }
 
 static int wcd9330_slim_set_hw_params(struct wcd9330_codec *wcd,
-				      struct wcd9330_dai_data *dai_data)
+				      struct wcd9330_dai_data *dai_data,
+				      int direction)
 {
 	struct slim_stream_config *cfg = &dai_data->sconfig;
 	struct wcd9330_slim_ch *ch;
@@ -1249,7 +1686,7 @@ static int wcd9330_slim_set_hw_params(struct wcd9330_codec *wcd,
 	}
 
 	cfg->ch_count = 0;
-	cfg->direction = SNDRV_PCM_STREAM_PLAYBACK;
+	cfg->direction = direction;
 	cfg->port_mask = 0;
 
 	list_for_each_entry(ch, &dai_data->slim_ch_list, list) {
@@ -1342,36 +1779,42 @@ static int wcd9330_hw_params(struct snd_pcm_substream *substream,
 			     struct snd_soc_dai *dai)
 {
 	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(dai->component);
-	u8 rx_fs;
+	u8 fs;
 
 	switch (params_rate(params)) {
 	case 8000:
-		rx_fs = 0x00;
+		fs = 0;
 		break;
 	case 16000:
-		rx_fs = 0x20;
+		fs = 1;
 		break;
 	case 32000:
-		rx_fs = 0x40;
+		fs = 2;
 		break;
 	case 48000:
-		rx_fs = 0x60;
+		fs = 3;
 		break;
 	case 96000:
-		rx_fs = 0x80;
+		fs = 4;
 		break;
 	case 192000:
-		rx_fs = 0xa0;
+		fs = 5;
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	wcd9330_set_interpolator_rate(dai, rx_fs);
-	wcd9330_set_rxsb_port_format(params, dai);
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		wcd9330_set_decimator_rate(dai, fs);
+		wcd9330_set_txsb_port_format(params, dai);
+	} else {
+		wcd9330_set_interpolator_rate(dai, fs << 5);
+		wcd9330_set_rxsb_port_format(params, dai);
+	}
 	wcd->dai[dai->id].sconfig.rate = params_rate(params);
 	wcd->dai[dai->id].sconfig.bps = params_width(params);
-	return wcd9330_slim_set_hw_params(wcd, &wcd->dai[dai->id]);
+	return wcd9330_slim_set_hw_params(wcd, &wcd->dai[dai->id],
+					  substream->stream);
 }
 
 /*
@@ -1386,6 +1829,24 @@ static int wcd9330_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 	struct wcd9330_dai_data *dai_data = &wcd->dai[w->shift];
 
 	switch (event) {
+	case SND_SOC_DAPM_POST_PMD:
+		wcd9330_slim_stop(dai_data);
+		break;
+	}
+	return 0;
+}
+
+/* The capture ports are connected once the whole path is up. */
+static int wcd9330_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
+				       struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+	struct wcd9330_dai_data *dai_data = &wcd->dai[w->shift];
+
+	switch (event) {
+	case SND_SOC_DAPM_POST_PMU:
+		return wcd9330_slim_start(wcd, dai_data);
 	case SND_SOC_DAPM_POST_PMD:
 		wcd9330_slim_stop(dai_data);
 		break;
@@ -1408,6 +1869,11 @@ static int wcd9330_set_channel_map(struct snd_soc_dai *dai,
 		wcd->rx_chs[i].ch_num = rx_slot[i];
 		INIT_LIST_HEAD(&wcd->rx_chs[i].list);
 	}
+	for (i = 0; tx_slot && i < tx_num && i < TOMTOM_TX_MAX; i++) {
+		wcd->tx_chs[i].ch_num = tx_slot[i];
+		INIT_LIST_HEAD(&wcd->tx_chs[i].list);
+		wcd->tx_port_value[i] = -1;
+	}
 	return 0;
 }
 
@@ -1418,6 +1884,15 @@ static int wcd9330_get_channel_map(const struct snd_soc_dai *dai,
 	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(dai->component);
 	struct wcd9330_slim_ch *ch;
 	int i = 0;
+
+	if (dai->id == AIF1_CAP) {
+		if (!tx_slot || !tx_num)
+			return -EINVAL;
+		list_for_each_entry(ch, &wcd->dai[dai->id].slim_ch_list, list)
+			tx_slot[i++] = ch->ch_num;
+		*tx_num = i;
+		return 0;
+	}
 
 	if (!rx_slot || !rx_num)
 		return -EINVAL;
@@ -1446,6 +1921,20 @@ static struct snd_soc_dai_driver wcd9330_dai[] = {
 			.rate_max = 192000,
 			.channels_min = 1,
 			.channels_max = 2,
+		},
+		.ops = &wcd9330_dai_ops,
+	},
+	{
+		.name = "tomtom_tx1",
+		.id = AIF1_CAP,
+		.capture = {
+			.stream_name = "AIF1 Capture",
+			.rates = WCD9330_RATES,
+			.formats = WCD9330_FORMATS,
+			.rate_min = 8000,
+			.rate_max = 192000,
+			.channels_min = 1,
+			.channels_max = 4,
 		},
 		.ops = &wcd9330_dai_ops,
 	},
@@ -1584,6 +2073,8 @@ static void wcd9330_codec_init_reg(struct snd_soc_component *comp)
 		{ TOMTOM_A_NCP_CLK, 0xff, 0xfc },
 		{ TOMTOM_A_BIAS_CURR_CTL_2, 0xff, 0x04 },
 		{ TOMTOM_A_INTR_MODE, 0x04, 0x04 },
+		/* 16 bit samples on TX7 */
+		{ TOMTOM_A_CDC_CONN_TX_SB_B1_CTL + 6, 0x60, 0x40 },
 	};
 
 	wcd9330_update_set(comp, init, ARRAY_SIZE(init));
@@ -1661,6 +2152,38 @@ enum {
  * 3.10 tomtom audio_reg_cfg[] — 20 entries, AFE_MAX_CDC_REGISTERS_TO_CONFIG.
  * Addresses are TOMTOM_REGISTER_START_OFFSET + register.
  */
+/*
+ * 3.10 tomtom_handle_pdata. LDO_H is at 3.0 V, its highest setting, and each
+ * microphone bias follows the filter of the same number.
+ */
+static void wcd9330_micbias_init(struct snd_soc_component *comp)
+{
+	struct wcd9330_codec *wcd = snd_soc_component_get_drvdata(comp);
+	static const u16 val_reg[] = {
+		TOMTOM_A_MICB_CFILT_1_VAL, TOMTOM_A_MICB_CFILT_2_VAL,
+		TOMTOM_A_MICB_CFILT_3_VAL,
+	};
+	static const u16 ctl_reg[] = {
+		TOMTOM_A_MICB_1_CTL, TOMTOM_A_MICB_2_CTL, TOMTOM_A_MICB_3_CTL,
+	};
+	static const u16 rbias_reg[] = {
+		TOMTOM_A_MICB_1_INT_RBIAS, TOMTOM_A_MICB_2_INT_RBIAS,
+		TOMTOM_A_MICB_3_INT_RBIAS,
+	};
+	unsigned int mv, k;
+	int i;
+
+	snd_soc_component_update_bits(comp, TOMTOM_A_LDO_H_MODE_1, 0x0c, 0x0c);
+	for (i = 0; i < 3; i++) {
+		mv = clamp(wcd->micbias_uv[i] / 1000, 260U, 2875U);
+		k = DIV_ROUND_UP(mv * 44, 2875) - 4;
+		snd_soc_component_update_bits(comp, val_reg[i], 0xfc, k << 2);
+		snd_soc_component_update_bits(comp, ctl_reg[i], 0x60, i << 5);
+		/* the internal bias resistors stay off */
+		snd_soc_component_write(comp, rbias_reg[i], 0x00);
+	}
+}
+
 static const struct q6afe_cdc_reg_cfg wcd9330_audio_reg_cfg[] = {
 	{ TOMTOM_REGISTER_START_OFFSET + TOMTOM_A_CDC_MAD_MAIN_CTL_1,
 	  HW_MAD_AUDIO_ENABLE, 0x1, 8, 0 },
@@ -1776,6 +2299,16 @@ static int wcd9330_codec_probe(struct snd_soc_component *component)
 	memcpy(wcd->rx_chs, wcd9330_rx_chs, sizeof(wcd9330_rx_chs));
 	for (i = 0; i < TOMTOM_RX_MAX; i++)
 		INIT_LIST_HEAD(&wcd->rx_chs[i].list);
+	for (i = 0; i < TOMTOM_TX_MAX; i++) {
+		wcd->tx_chs[i] = (struct wcd9330_slim_ch)TOMTOM_SLIM_TX_CH(i);
+		INIT_LIST_HEAD(&wcd->tx_chs[i].list);
+		wcd->tx_port_value[i] = -1;
+	}
+	for (i = 0; i < TOMTOM_NUM_DECIMATORS; i++) {
+		wcd->hpf[i].wcd = wcd;
+		wcd->hpf[i].decimator = i;
+		INIT_DELAYED_WORK(&wcd->hpf[i].work, wcd9330_hpf_work);
+	}
 
 	ret = wcd9330_enable_mclk(wcd, true);
 	if (ret)
@@ -1790,6 +2323,7 @@ static int wcd9330_codec_probe(struct snd_soc_component *component)
 	if ((snd_soc_component_read(component, TOMTOM_A_QFUSE_STATUS) & 0x03) != 0x03)
 		dev_warn(component->dev, "QFUSE sensing did not complete\n");
 	wcd9330_codec_init_reg(component);
+	wcd9330_micbias_init(component);
 
 	/* 3.10 irq_init: all sources masked until set_jack unmasks JACK_SWITCH */
 	regmap_write(wcd->regmap, TOMTOM_A_INTR_MASK0, 0xff);
@@ -1816,7 +2350,8 @@ static const struct snd_soc_component_driver wcd9330_component_drv = {
 static int wcd9330_parse_dt(struct wcd9330_codec *wcd)
 {
 	struct device *dev = wcd->dev;
-	int ret;
+	char prop[32];
+	int i, ret;
 
 	wcd->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(wcd->reset_gpio))
@@ -1841,6 +2376,13 @@ static int wcd9330_parse_dt(struct wcd9330_codec *wcd)
 	wcd->hph_class_ab = of_property_read_bool(dev->of_node,
 						  "qcom,hph-class-ab");
 	wcd->irq = of_irq_get(dev->of_node, 0);
+
+	for (i = 0; i < ARRAY_SIZE(wcd->micbias_uv); i++) {
+		snprintf(prop, sizeof(prop), "qcom,micbias%d-microvolt", i + 1);
+		if (of_property_read_u32(dev->of_node, prop,
+					 &wcd->micbias_uv[i]))
+			wcd->micbias_uv[i] = 1800000;
+	}
 	return 0;
 }
 
