@@ -1,0 +1,181 @@
+# SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/sound/qcom,wcd9330.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Qualcomm WCD9330 Audio Codec
+
+maintainers:
+  - davigamer987 <davimarchesiprimo@gmail.com>
+
+description:
+  The Qualcomm WCD9330 is a standalone audio codec on SLIMbus with headphone,
+  earpiece and line outputs, six analog microphone inputs and a headset jack
+  detection block. It shows up on the bus as two devices, the codec itself and
+  its interface device.
+
+properties:
+  compatible:
+    const: slim217,130
+
+  reg:
+    maxItems: 1
+
+  clocks:
+    maxItems: 1
+
+  clock-names:
+    items:
+      - const: mclk
+
+  interrupts:
+    maxItems: 1
+
+  reset-gpios:
+    maxItems: 1
+
+  slim-ifc-dev:
+    description: The interface device of the codec
+    $ref: /schemas/types.yaml#/definitions/phandle
+
+  '#sound-dai-cells':
+    const: 1
+
+  vdd-buck-supply:
+    description: 2.15V supply of the class H buck converter
+
+  vdd-tx-h-supply:
+    description: 1.8V supply of the capture path
+
+  vdd-rx-h-supply:
+    description: 1.8V supply of the playback path
+
+  vdd-px-supply:
+    description: 1.8V I/O supply
+
+  vdd-a-1p2v-supply:
+    description: 1.2V analog supply
+
+  vdd-cx1-supply:
+    description: 1.2V digital core supply
+
+  vdd-cx2-supply:
+    description: 1.2V digital core supply
+
+  qcom,micbias1-microvolt:
+    description: Voltage of microphone bias 1
+    minimum: 260000
+    maximum: 2875000
+    default: 1800000
+
+  qcom,micbias2-microvolt:
+    description: Voltage of microphone bias 2
+    minimum: 260000
+    maximum: 2875000
+    default: 1800000
+
+  qcom,micbias3-microvolt:
+    description: Voltage of microphone bias 3
+    minimum: 260000
+    maximum: 2875000
+    default: 1800000
+
+  qcom,mbhc-insert-detect-inverted:
+    description:
+      The detection switch of the headset jack is open while a plug is
+      inserted.
+    type: boolean
+
+  qcom,hph-class-ab:
+    description:
+      Run the headphone amplifiers in class AB from the charge pump instead of
+      class H.
+    type: boolean
+
+required:
+  - compatible
+  - reg
+
+allOf:
+  - $ref: dai-common.yaml#
+  - if:
+      required:
+        - slim-ifc-dev
+    then:
+      required:
+        - clocks
+        - clock-names
+        - interrupts
+        - reset-gpios
+        - '#sound-dai-cells'
+        - vdd-buck-supply
+        - vdd-tx-h-supply
+        - vdd-rx-h-supply
+        - vdd-px-supply
+        - vdd-a-1p2v-supply
+        - vdd-cx1-supply
+        - vdd-cx2-supply
+    else:
+      properties:
+        clocks: false
+        clock-names: false
+        interrupts: false
+        reset-gpios: false
+        '#sound-dai-cells': false
+        vdd-buck-supply: false
+        vdd-tx-h-supply: false
+        vdd-rx-h-supply: false
+        vdd-px-supply: false
+        vdd-a-1p2v-supply: false
+        vdd-cx1-supply: false
+        vdd-cx2-supply: false
+        qcom,micbias1-microvolt: false
+        qcom,micbias2-microvolt: false
+        qcom,micbias3-microvolt: false
+        qcom,mbhc-insert-detect-inverted: false
+        qcom,hph-class-ab: false
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/clock/qcom,rpmcc.h>
+    #include <dt-bindings/gpio/gpio.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+
+    slim {
+        #address-cells = <2>;
+        #size-cells = <0>;
+
+        tomtom_ifd: codec@0,0 {
+            compatible = "slim217,130";
+            reg = <0 0>;
+        };
+
+        codec@1,0 {
+            compatible = "slim217,130";
+            reg = <1 0>;
+            slim-ifc-dev = <&tomtom_ifd>;
+
+            clocks = <&rpmcc RPM_SMD_DIV_CLK1>;
+            clock-names = "mclk";
+            interrupts-extended = <&tlmm 72 IRQ_TYPE_LEVEL_HIGH>;
+            reset-gpios = <&tlmm 68 GPIO_ACTIVE_LOW>;
+
+            vdd-buck-supply = <&vreg_s5a_2p15>;
+            vdd-tx-h-supply = <&vreg_s4a_1p8>;
+            vdd-rx-h-supply = <&vreg_s4a_1p8>;
+            vdd-px-supply = <&vreg_s4a_1p8>;
+            vdd-a-1p2v-supply = <&vreg_l11a_1p2>;
+            vdd-cx1-supply = <&vreg_l11a_1p2>;
+            vdd-cx2-supply = <&vreg_l11a_1p2>;
+
+            qcom,micbias1-microvolt = <1800000>;
+            qcom,micbias2-microvolt = <2700000>;
+            qcom,micbias3-microvolt = <1800000>;
+            qcom,mbhc-insert-detect-inverted;
+
+            #sound-dai-cells = <1>;
+        };
+    };
