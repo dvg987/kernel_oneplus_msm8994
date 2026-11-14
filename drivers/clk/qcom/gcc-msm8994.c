@@ -90,6 +90,10 @@ static struct clk_alpha_pll_postdiv gpll4 = {
 	},
 };
 
+static const struct parent_map gcc_xo_map[] = {
+	{ P_XO, 0 },
+};
+
 static const struct parent_map gcc_xo_gpll0_map[] = {
 	{ P_XO, 0 },
 	{ P_GPLL0, 1 },
@@ -861,6 +865,7 @@ static struct clk_rcg2 pcie_0_aux_clk_src = {
 	.cmd_rcgr = 0x1b00,
 	.mnd_width = 8,
 	.hid_width = 5,
+	.parent_map = gcc_xo_map,
 	.freq_tbl = ftbl_pcie_0_aux_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "pcie_0_aux_clk_src",
@@ -880,6 +885,7 @@ static const struct freq_tbl ftbl_pcie_pipe_clk_src[] = {
 static struct clk_rcg2 pcie_0_pipe_clk_src = {
 	.cmd_rcgr = 0x1adc,
 	.hid_width = 5,
+	.parent_map = gcc_xo_map,
 	.freq_tbl = ftbl_pcie_pipe_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "pcie_0_pipe_clk_src",
@@ -900,6 +906,7 @@ static struct clk_rcg2 pcie_1_aux_clk_src = {
 	.cmd_rcgr = 0x1b80,
 	.mnd_width = 8,
 	.hid_width = 5,
+	.parent_map = gcc_xo_map,
 	.freq_tbl = ftbl_pcie_1_aux_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "pcie_1_aux_clk_src",
@@ -914,6 +921,7 @@ static struct clk_rcg2 pcie_1_aux_clk_src = {
 static struct clk_rcg2 pcie_1_pipe_clk_src = {
 	.cmd_rcgr = 0x1b5c,
 	.hid_width = 5,
+	.parent_map = gcc_xo_map,
 	.freq_tbl = ftbl_pcie_pipe_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "pcie_1_pipe_clk_src",
@@ -1043,6 +1051,7 @@ static struct clk_rcg2 tsif_ref_clk_src = {
 	.cmd_rcgr = 0x0d90,
 	.mnd_width = 8,
 	.hid_width = 5,
+	.parent_map = gcc_xo_map,
 	.freq_tbl = ftbl_tsif_ref_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "tsif_ref_clk_src",
@@ -1081,6 +1090,7 @@ static const struct freq_tbl ftbl_usb3_phy_aux_clk_src[] = {
 static struct clk_rcg2 usb3_phy_aux_clk_src = {
 	.cmd_rcgr = 0x1414,
 	.hid_width = 5,
+	.parent_map = gcc_xo_map,
 	.freq_tbl = ftbl_usb3_phy_aux_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "usb3_phy_aux_clk_src",
