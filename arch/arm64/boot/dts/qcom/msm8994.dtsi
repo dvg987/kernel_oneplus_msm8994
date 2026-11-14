@@ -542,7 +542,7 @@
 		};
 
 		blsp1_dma: dma-controller@f9904000 {
-			compatible = "qcom,bam-v1.7.0";
+			compatible = "qcom,bam-v1.4.0";
 			reg = <0xf9904000 0x19000>;
 			interrupts = <GIC_SPI 238 IRQ_TYPE_LEVEL_HIGH>;
 			#dma-cells = <1>;
@@ -675,7 +675,7 @@
 		};
 
 		blsp2_dma: dma-controller@f9944000 {
-			compatible = "qcom,bam-v1.7.0";
+			compatible = "qcom,bam-v1.4.0";
 			reg = <0xf9944000 0x19000>;
 			interrupts = <GIC_SPI 239 IRQ_TYPE_LEVEL_HIGH>;
 			#dma-cells = <1>;
