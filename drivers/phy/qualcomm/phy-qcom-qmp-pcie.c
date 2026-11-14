@@ -27,6 +27,9 @@
 #include "phy-qcom-qmp-common.h"
 
 #include "phy-qcom-qmp.h"
+#include "phy-qcom-qmp-pcs-v1.h"
+#include "phy-qcom-qmp-qserdes-com-v1.h"
+#include "phy-qcom-qmp-qserdes-txrx-v1.h"
 #include "phy-qcom-qmp-pcs-misc-v3.h"
 #include "phy-qcom-qmp-pcs-pcie-v4.h"
 #include "phy-qcom-qmp-pcs-pcie-v4_20.h"
@@ -54,6 +57,13 @@ enum qphy_reg_layout {
 	QPHY_PCS_POWER_DOWN_CONTROL,
 	/* Keep last to ensure regs_layout arrays are properly initialized */
 	QPHY_LAYOUT_SIZE
+};
+
+static const unsigned int pciephy_v1_regs_layout[QPHY_LAYOUT_SIZE] = {
+	[QPHY_SW_RESET]			= QPHY_V1_PCS_SW_RESET,
+	[QPHY_START_CTRL]		= QPHY_V1_PCS_START_CONTROL,
+	[QPHY_PCS_STATUS]		= QPHY_V1_PCS_PCS_STATUS,
+	[QPHY_PCS_POWER_DOWN_CONTROL]	= QPHY_V1_PCS_POWER_DOWN_CONTROL,
 };
 
 static const unsigned int pciephy_v2_regs_layout[QPHY_LAYOUT_SIZE] = {
@@ -130,6 +140,62 @@ static const unsigned int pciephy_v10_60_regs_layout[QPHY_LAYOUT_SIZE] = {
 	[QPHY_START_CTRL]		= QPHY_V10_60_PCS_START_CONTROL,
 	[QPHY_PCS_STATUS]		= QPHY_V10_60_PCS_PCS_STATUS1,
 	[QPHY_PCS_POWER_DOWN_CONTROL]	= QPHY_V10_60_PCS_POWER_DOWN_CONTROL,
+};
+
+static const struct qmp_phy_init_tbl msm8994_pcie_serdes_tbl[] = {
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_SYSCLK_EN_SEL_TXBAND, 0x08),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_DEC_START1, 0x82),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_DEC_START2, 0x03),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_DIV_FRAC_START1, 0xd5),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_DIV_FRAC_START2, 0xaa),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_DIV_FRAC_START3, 0x4d),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLLLOCK_CMP_EN, 0x03),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLLLOCK_CMP1, 0x06),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLLLOCK_CMP2, 0x1a),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_CRCTRL, 0x7c),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_CP_SETI, 0x1f),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_IP_SETP, 0x12),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_CP_SETP, 0x0f),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_IP_SETI, 0x01),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_IE_TRIM, 0x0f),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_IP_TRIM, 0x0f),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_CNTRL, 0x46),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_VCOTAIL_EN, 0xe1),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_RESETSM_CNTRL, 0x91),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_RESETSM_CNTRL2, 0x07),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_RES_CODE_START_SEG1, 0x20),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_RES_CODE_CAL_CSR, 0x77),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_RES_TRIM_CONTROL, 0x15),
+	QMP_PHY_INIT_CFG(QSERDES_V1_COM_PLL_RXTXEPCLK_EN, 0x10),
+};
+
+static const struct qmp_phy_init_tbl msm8994_pcie_tx_tbl[] = {
+	QMP_PHY_INIT_CFG(QSERDES_V1_TX_RCV_DETECT_LVL, 0x03),
+};
+
+static const struct qmp_phy_init_tbl msm8994_pcie_rx_tbl[] = {
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_CDR_CONTROL1, 0xf4),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_CDR_CONTROL_HALF, 0x2c),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_UCDR_FO_GAIN, 0x09),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_UCDR_SO_GAIN, 0x04),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_UCDR_SO_SATURATION_AND_ENABLE, 0x49),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_EQ_GAIN1_LSB, 0xff),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_EQ_GAIN1_MSB, 0x1f),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_EQ_GAIN2_LSB, 0xff),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_EQ_GAIN2_MSB, 0x00),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_EQU_ADAPTOR_CNTRL2, 0x1e),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_EQ_OFFSET_ADAPTOR_CNTRL1, 0x67),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_RX_OFFSET_ADAPTOR_CNTRL2, 0x80),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_SIGDET_ENABLES, 0x40),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_SIGDET_CNTRL, 0xb0),
+	QMP_PHY_INIT_CFG(QSERDES_V1_RX_SIGDET_DEGLITCH_CNTRL, 0x06),
+};
+
+static const struct qmp_phy_init_tbl msm8994_pcie_pcs_tbl[] = {
+	QMP_PHY_INIT_CFG(QPHY_V1_PCS_ENDPOINT_REFCLK_DRIVE, 0x10),
+	QMP_PHY_INIT_CFG(QPHY_V1_PCS_POWER_STATE_CONFIG1, 0xa3),
+	QMP_PHY_INIT_CFG(QPHY_V1_PCS_POWER_STATE_CONFIG2, 0x4b),
+	QMP_PHY_INIT_CFG(QPHY_V1_PCS_RX_IDLE_DTCT_CNTRL, 0x4d),
 };
 
 static const struct qmp_phy_init_tbl msm8998_pcie_serdes_tbl[] = {
@@ -4078,7 +4144,7 @@ static inline void qphy_clrbits(void __iomem *base, u32 offset, u32 val)
 
 /* list of clocks required by phy */
 static const char * const qmp_pciephy_clk_l[] = {
-	"aux", "cfg_ahb", "ref", "refgen", "rchng", "phy_aux",
+	"aux", "cfg_ahb", "ref", "refgen", "rchng", "phy_aux", "ldo",
 };
 
 /* list of regulators */
@@ -4108,6 +4174,13 @@ static const struct qmp_pcie_offsets qmp_pcie_offsets_qhp = {
 	.pcs		= 0x1800,
 	.tx		= 0x0800,
 	/* no .rx for QHP */
+};
+
+static const struct qmp_pcie_offsets qmp_pcie_offsets_v1 = {
+	.serdes		= 0,
+	.pcs		= 0x0600,
+	.tx		= 0x0200,
+	.rx		= 0x0400,
 };
 
 static const struct qmp_pcie_offsets qmp_pcie_offsets_v2 = {
@@ -4712,6 +4785,31 @@ static const struct qmp_phy_cfg sm8250_qmp_gen3x2_pciephy_cfg = {
 	.vreg_list		= qmp_phy_vreg_l,
 	.num_vregs		= ARRAY_SIZE(qmp_phy_vreg_l),
 	.regs			= pciephy_v4_regs_layout,
+
+	.pwrdn_ctrl		= SW_PWRDN | REFCLK_DRV_DSBL,
+	.phy_status		= PHYSTATUS,
+};
+
+static const struct qmp_phy_cfg msm8994_pciephy_cfg = {
+	.lanes			= 1,
+
+	.offsets		= &qmp_pcie_offsets_v1,
+
+	.tbls = {
+		.serdes		= msm8994_pcie_serdes_tbl,
+		.serdes_num	= ARRAY_SIZE(msm8994_pcie_serdes_tbl),
+		.tx		= msm8994_pcie_tx_tbl,
+		.tx_num		= ARRAY_SIZE(msm8994_pcie_tx_tbl),
+		.rx		= msm8994_pcie_rx_tbl,
+		.rx_num		= ARRAY_SIZE(msm8994_pcie_rx_tbl),
+		.pcs		= msm8994_pcie_pcs_tbl,
+		.pcs_num	= ARRAY_SIZE(msm8994_pcie_pcs_tbl),
+	},
+	.reset_list		= ipq8074_pciephy_reset_l,
+	.num_resets		= ARRAY_SIZE(ipq8074_pciephy_reset_l),
+	.vreg_list		= qmp_phy_vreg_l,
+	.num_vregs		= ARRAY_SIZE(qmp_phy_vreg_l),
+	.regs			= pciephy_v1_regs_layout,
 
 	.pwrdn_ctrl		= SW_PWRDN | REFCLK_DRV_DSBL,
 	.phy_status		= PHYSTATUS,
@@ -6402,6 +6500,9 @@ static const struct of_device_id qmp_pcie_of_match_table[] = {
 	}, {
 		.compatible = "qcom,kaanapali-qmp-gen3x2-pcie-phy",
 		.data = &qmp_v8_gen3x2_pciephy_cfg,
+	}, {
+		.compatible = "qcom,msm8994-qmp-pcie-phy",
+		.data = &msm8994_pciephy_cfg,
 	}, {
 		.compatible = "qcom,msm8998-qmp-pcie-phy",
 		.data = &msm8998_pciephy_cfg,
