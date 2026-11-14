@@ -760,8 +760,8 @@
 			#power-domain-cells = <1>;
 			reg = <0xfc400000 0x2000>;
 
-			clock-names = "xo", "sleep";
-			clocks = <&xo_board>, <&sleep_clk>;
+			clock-names = "xo", "sleep", "pcie_0_pipe", "pcie_1_pipe";
+			clocks = <&xo_board>, <&sleep_clk>, <0>, <&pcie1_phy>;
 		};
 
 		gpu: gpu@fdb00000 {
@@ -1133,6 +1133,74 @@
 			#interrupt-cells = <4>;
 		};
 
+		pcie1: pcie@fc528000 {
+			compatible = "qcom,pcie-msm8994";
+			reg = <0xfc528000 0x2000>,
+			      <0xf8800000 0xf1d>,
+			      <0xf8800f20 0xa8>,
+			      <0xf8801000 0x2000>;
+			reg-names = "parf", "dbi", "elbi", "config";
+			device_type = "pci";
+			linux,pci-domain = <1>;
+			bus-range = <0x00 0xff>;
+			num-lanes = <1>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			ranges = <0x01000000 0x0 0x00000000 0xf8880000 0x0 0x00080000>,
+				 <0x02000000 0x0 0xf8900000 0xf8900000 0x0 0x00700000>;
+			interrupts = <GIC_SPI 271 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "msi";
+			#interrupt-cells = <1>;
+			interrupt-map-mask = <0 0 0 0x7>;
+			interrupt-map = <0 0 0 1 &intc GIC_SPI 272 IRQ_TYPE_LEVEL_HIGH>,
+					<0 0 0 2 &intc GIC_SPI 273 IRQ_TYPE_LEVEL_HIGH>,
+					<0 0 0 3 &intc GIC_SPI 274 IRQ_TYPE_LEVEL_HIGH>,
+					<0 0 0 4 &intc GIC_SPI 275 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&gcc GCC_PCIE_1_CFG_AHB_CLK>,
+				 <&gcc GCC_PCIE_1_MSTR_AXI_CLK>,
+				 <&gcc GCC_PCIE_1_SLV_AXI_CLK>,
+				 <&gcc GCC_PCIE_1_AUX_CLK>;
+			clock-names = "iface", "master_bus", "slave_bus", "aux";
+			assigned-clocks = <&gcc GCC_PCIE_1_AUX_CLK>;
+			assigned-clock-rates = <1011000>;
+			resets = <&gcc PCIE_1_RESET>;
+			reset-names = "core";
+			power-domains = <&gcc PCIE_1_GDSC>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pcie1_default>;
+			status = "disabled";
+
+			pcie1_port: pcie@0 {
+				device_type = "pci";
+				reg = <0x0 0x0 0x0 0x0 0x0>;
+				bus-range = <0x01 0xff>;
+				#address-cells = <3>;
+				#size-cells = <2>;
+				ranges;
+				phys = <&pcie1_phy>;
+			};
+		};
+
+		pcie1_phy: phy@fc52e000 {
+			compatible = "qcom,msm8994-qmp-pcie-phy";
+			reg = <0xfc52e000 0x1000>;
+			clocks = <&gcc GCC_PCIE_1_CFG_AHB_CLK>,
+				 <&rpmcc RPM_SMD_LN_BB_CLK>,
+				 <&gcc PCIE_1_PHY_LDO>,
+				 <&gcc GCC_PCIE_1_PIPE_CLK>;
+			clock-names = "cfg_ahb",
+				      "ref",
+				      "ldo",
+				      "pipe";
+			clock-output-names = "pcie_1_pipe_clk";
+			#clock-cells = <0>;
+			#phy-cells = <0>;
+			power-domains = <&gcc PCIE_1_GDSC>;
+			resets = <&gcc PCIE_PHY_1_PHY_RESET>, <&gcc PCIE_PHY_1_RESET>;
+			reset-names = "phy", "common";
+			status = "disabled";
+		};
+
 		tcsr_mutex: hwlock@fd484000 {
 			compatible = "qcom,msm8994-tcsr-mutex", "qcom,tcsr-mutex";
 			reg = <0xfd484000 0x1000>;
@@ -1355,6 +1423,29 @@
 				pins = "sdc1_data";
 				bias-pull-up;
 				drive-strength = <2>;
+			};
+
+			pcie1_default: pcie1-default-state {
+				clkreq-pins {
+					pins = "gpio36";
+					function = "pci_e1";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+
+				perst-pins {
+					pins = "gpio35";
+					function = "gpio";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+
+				wake-pins {
+					pins = "gpio37";
+					function = "gpio";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
 			};
 
 			sdc1_rclk_on: rclk-on-state {
