@@ -97,6 +97,7 @@ static const struct pll_vco mmpll_t_vco[] = {
 
 static const struct alpha_pll_config mmpll_p_config = {
 	.post_div_mask = 0xf00,
+	.config_ctl_val = 0x4001051b,
 };
 
 static struct clk_alpha_pll mmpll0_early = {
