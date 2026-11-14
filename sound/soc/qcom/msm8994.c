@@ -45,7 +45,9 @@ static int msm8994_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	struct snd_mask *fmt = hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT);
 
 	rate->min = rate->max = 48000;
-	channels->min = channels->max = 2;
+	/* one microphone at a time */
+	channels->min = channels->max =
+		rtd->dai_link->id == SLIMBUS_0_TX ? 1 : 2;
 	snd_mask_set_format(fmt, SNDRV_PCM_FORMAT_S16_LE);
 
 	return 0;
