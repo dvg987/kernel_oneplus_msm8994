@@ -34,6 +34,7 @@
 
 	aliases {
 		serial0 = &blsp1_uart2;
+		serial1 = &blsp2_uart2;
 		mmc0 = &sdhc1;
 	};
 
@@ -1674,6 +1675,15 @@
 };
 
 / {
+	divclk4: divclk4 {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <32768>;
+		clock-output-names = "divclk4";
+		pinctrl-names = "default";
+		pinctrl-0 = <&divclk4_default>;
+	};
+
 	vreg_wlan_bt_3p3: wlan-bt-3p3-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "wlan_bt_3p3";
@@ -1702,6 +1712,16 @@
 	};
 };
 
+&blsp2_uart2 {
+	uart-has-rtscts;
+	status = "okay";
+
+	bluetooth {
+		compatible = "qcom,qca6174-bt";
+		clocks = <&divclk4>;
+	};
+};
+
 &pcie1 {
 	vdda-supply = <&vreg_l28a_1p0>;
 	status = "okay";
@@ -1721,6 +1741,25 @@
 };
 
 &pm8994_gpios {
+	pinctrl-names = "default";
+	pinctrl-0 = <&bt_en_default>;
+
+	bt_en_default: bt-en-default-state {
+		pins = "gpio19";
+		function = PMIC_GPIO_FUNC_NORMAL;
+		power-source = <PM8994_GPIO_S4>;
+		qcom,drive-strength = <PMIC_GPIO_STRENGTH_LOW>;
+		bias-pull-down;
+		output-high;
+	};
+
+	divclk4_default: divclk4-default-state {
+		pins = "gpio18";
+		function = PMIC_GPIO_FUNC_FUNC2;
+		power-source = <PM8994_GPIO_S4>;
+		bias-disable;
+	};
+
 	wlan_bt_3p3_en_default: wlan-bt-3p3-en-default-state {
 		pins = "gpio9";
 		function = PMIC_GPIO_FUNC_NORMAL;
