@@ -12,6 +12,7 @@
 #include <linux/crc8.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
+#include <linux/firmware/qcom/qcom_scm.h>
 #include <linux/gpio/consumer.h>
 #include <linux/interconnect.h>
 #include <linux/interrupt.h>
@@ -189,6 +190,8 @@
 #define FLUSH_TIMEOUT_US			100
 
 #define QCOM_PCIE_CRC8_POLYNOMIAL		(BIT(2) | BIT(1) | BIT(0))
+
+#define MSM8994_PCIE_SCM_DEV_ID			11
 
 #define QCOM_PCIE_LINK_SPEED_TO_BW(speed) \
 		Mbps_to_icc(PCIE_SPEED2MBS_ENC(pcie_get_link_speed(speed)))
@@ -684,6 +687,49 @@ static int qcom_pcie_post_init_1_0_0(struct qcom_pcie *pcie)
 		writel(val, pcie->parf + PARF_AXI_MSTR_WR_ADDR_HALT);
 	}
 
+	qcom_pcie_set_slot_cap(pcie->pci);
+
+	return 0;
+}
+
+static int qcom_pcie_init_msm8994(struct qcom_pcie *pcie)
+{
+	struct dw_pcie *pci = pcie->pci;
+	struct device *dev = pci->dev;
+	u32 val;
+	int ret;
+
+	ret = qcom_pcie_init_1_0_0(pcie);
+	if (ret)
+		return ret;
+
+	ret = qcom_scm_restore_sec_cfg(MSM8994_PCIE_SCM_DEV_ID +
+				       of_get_pci_domain_nr(dev->of_node), 0);
+	if (ret) {
+		dev_err(dev, "cannot restore the secure configuration\n");
+		qcom_pcie_deinit_1_0_0(pcie);
+		return ret;
+	}
+
+	writel(0, pcie->parf + PARF_DBI_BASE_ADDR);
+
+	val = readl(pcie->parf + PARF_SYS_CTRL);
+	val &= ~MAC_PHY_POWERDOWN_IN_P2_D_MUX_EN;
+	val |= MSTR_ACLK_CGC_DIS | SLV_ACLK_CGC_DIS | CORE_CLK_CGC_DIS |
+	       AUX_PWR_DET | L23_CLK_RMV_DIS | L1_CLK_RMV_DIS;
+	writel(val, pcie->parf + PARF_SYS_CTRL);
+
+	if (IS_ENABLED(CONFIG_PCI_MSI)) {
+		val = readl(pcie->parf + PARF_AXI_MSTR_WR_ADDR_HALT);
+		val |= EN;
+		writel(val, pcie->parf + PARF_AXI_MSTR_WR_ADDR_HALT);
+	}
+
+	return 0;
+}
+
+static int qcom_pcie_post_init_msm8994(struct qcom_pcie *pcie)
+{
 	qcom_pcie_set_slot_cap(pcie->pci);
 
 	return 0;
@@ -1525,6 +1571,14 @@ static const struct qcom_pcie_ops ops_1_0_0 = {
 	.get_ltssm = qcom_pcie_2_1_0_get_ltssm,
 };
 
+static const struct qcom_pcie_ops ops_msm8994 = {
+	.get_resources = qcom_pcie_get_resources_1_0_0,
+	.init = qcom_pcie_init_msm8994,
+	.post_init = qcom_pcie_post_init_msm8994,
+	.deinit = qcom_pcie_deinit_1_0_0,
+	.ltssm_enable = qcom_pcie_2_3_2_ltssm_enable,
+};
+
 /* Qcom IP rev.: 2.3.2	Synopsys IP rev.: 4.21a */
 static const struct qcom_pcie_ops ops_2_3_2 = {
 	.get_resources = qcom_pcie_get_resources_2_3_2,
@@ -1607,6 +1661,10 @@ static const struct qcom_pcie_cfg cfg_1_34_0 = {
 
 static const struct qcom_pcie_cfg cfg_2_1_0 = {
 	.ops = &ops_2_1_0,
+};
+
+static const struct qcom_pcie_cfg cfg_msm8994 = {
+	.ops = &ops_msm8994,
 };
 
 static const struct qcom_pcie_cfg cfg_2_3_2 = {
@@ -2474,6 +2532,7 @@ static const struct of_device_id qcom_pcie_match[] = {
 	{ .compatible = "qcom,pcie-ipq8074", .data = &cfg_2_3_3 },
 	{ .compatible = "qcom,pcie-ipq8074-gen3", .data = &cfg_2_9_0 },
 	{ .compatible = "qcom,pcie-ipq9574", .data = &cfg_2_9_0 },
+	{ .compatible = "qcom,pcie-msm8994", .data = &cfg_msm8994 },
 	{ .compatible = "qcom,pcie-msm8996", .data = &cfg_2_3_2 },
 	{ .compatible = "qcom,pcie-qcs404", .data = &cfg_2_4_0 },
 	{ .compatible = "qcom,pcie-sa8255p", .data = &cfg_fw_managed },
