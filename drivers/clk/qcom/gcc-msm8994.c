@@ -27,6 +27,7 @@ enum {
 	P_XO,
 	P_GPLL0,
 	P_GPLL4,
+	P_PCIE_PIPE,
 };
 
 static struct clk_alpha_pll gpll0_early = {
@@ -877,20 +878,24 @@ static struct clk_rcg2 pcie_0_aux_clk_src = {
 	},
 };
 
+static const struct parent_map gcc_pcie_pipe_map[] = {
+	{ P_PCIE_PIPE, 2 },
+};
+
 static const struct freq_tbl ftbl_pcie_pipe_clk_src[] = {
-	F(125000000, P_XO, 1, 0, 0),
+	F(125000000, P_PCIE_PIPE, 1, 0, 0),
 	{ }
 };
 
 static struct clk_rcg2 pcie_0_pipe_clk_src = {
 	.cmd_rcgr = 0x1adc,
 	.hid_width = 5,
-	.parent_map = gcc_xo_map,
+	.parent_map = gcc_pcie_pipe_map,
 	.freq_tbl = ftbl_pcie_pipe_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "pcie_0_pipe_clk_src",
 		.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.fw_name = "pcie_0_pipe",
 		},
 		.num_parents = 1,
 		.ops = &clk_rcg2_ops,
@@ -921,12 +926,12 @@ static struct clk_rcg2 pcie_1_aux_clk_src = {
 static struct clk_rcg2 pcie_1_pipe_clk_src = {
 	.cmd_rcgr = 0x1b5c,
 	.hid_width = 5,
-	.parent_map = gcc_xo_map,
+	.parent_map = gcc_pcie_pipe_map,
 	.freq_tbl = ftbl_pcie_pipe_clk_src,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "pcie_1_pipe_clk_src",
 		.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.fw_name = "pcie_1_pipe",
 		},
 		.num_parents = 1,
 		.ops = &clk_rcg2_ops,
@@ -2670,8 +2675,18 @@ static const struct of_device_id gcc_msm8994_match_table[] = {
 };
 MODULE_DEVICE_TABLE(of, gcc_msm8994_match_table);
 
+static void gcc_msm8994_park_pipe_clk_src(struct regmap *regmap,
+					  const struct clk_rcg2 *rcg)
+{
+	regmap_write(regmap, rcg->cmd_rcgr + 4,
+		     rcg->parent_map[0].cfg << 8);
+	regmap_write(regmap, rcg->cmd_rcgr, BIT(0));
+}
+
 static int gcc_msm8994_probe(struct platform_device *pdev)
 {
+	struct regmap *regmap;
+
 	if (of_device_is_compatible(pdev->dev.of_node, "qcom,gcc-msm8992")) {
 		/* MSM8992 features less clocks and some have different freq tables */
 		gcc_msm8994_desc.clks[UFS_AXI_CLK_SRC] = NULL;
@@ -2716,7 +2731,14 @@ static int gcc_msm8994_probe(struct platform_device *pdev)
 		gcc_msm8994_desc.clks[GCC_SYS_NOC_UFS_AXI_CLK] = NULL;
 	}
 
-	return qcom_cc_probe(pdev, &gcc_msm8994_desc);
+	regmap = qcom_cc_map(pdev, &gcc_msm8994_desc);
+	if (IS_ERR(regmap))
+		return PTR_ERR(regmap);
+
+	gcc_msm8994_park_pipe_clk_src(regmap, &pcie_0_pipe_clk_src);
+	gcc_msm8994_park_pipe_clk_src(regmap, &pcie_1_pipe_clk_src);
+
+	return qcom_cc_really_probe(&pdev->dev, &gcc_msm8994_desc, regmap);
 }
 
 static struct platform_driver gcc_msm8994_driver = {
