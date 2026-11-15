@@ -581,37 +581,91 @@
 	status = "okay";
 };
 
+&cpus {
+	idle-states {
+		entry-method = "psci";
+
+		little_cpu_ret: cpu-retention-0 {
+			compatible = "arm,idle-state";
+			idle-state-name = "little-retention";
+			arm,psci-suspend-param = <0x00000001>;
+			entry-latency-us = <40>;
+			exit-latency-us = <100>;
+			min-residency-us = <300>;
+			local-timer-stop;
+		};
+
+		little_cpu_pc: cpu-power-collapse-0 {
+			compatible = "arm,idle-state";
+			idle-state-name = "little-power-collapse";
+			arm,psci-suspend-param = <0x00010003>;
+			entry-latency-us = <300>;
+			exit-latency-us = <480>;
+			min-residency-us = <2000>;
+			local-timer-stop;
+		};
+
+		big_cpu_ret: cpu-retention-1 {
+			compatible = "arm,idle-state";
+			idle-state-name = "big-retention";
+			arm,psci-suspend-param = <0x00000001>;
+			entry-latency-us = <40>;
+			exit-latency-us = <120>;
+			min-residency-us = <400>;
+			local-timer-stop;
+		};
+
+		big_cpu_pc: cpu-power-collapse-1 {
+			compatible = "arm,idle-state";
+			idle-state-name = "big-power-collapse";
+			arm,psci-suspend-param = <0x00010003>;
+			entry-latency-us = <300>;
+			exit-latency-us = <640>;
+			min-residency-us = <3000>;
+			local-timer-stop;
+		};
+	};
+};
+
 /* Per-CPU ACC (power control) that lk2nd uses to start the cores */
 &cpu0 {
 	qcom,acc = <&cpu0_acc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
 };
 
 &cpu1 {
 	qcom,acc = <&cpu1_acc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
 };
 
 &cpu2 {
 	qcom,acc = <&cpu2_acc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
 };
 
 &cpu3 {
 	qcom,acc = <&cpu3_acc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
 };
 
 &cpu4 {
 	qcom,acc = <&cpu4_acc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
 };
 
 &cpu5 {
 	qcom,acc = <&cpu5_acc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
 };
 
 &cpu6 {
 	qcom,acc = <&cpu6_acc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
 };
 
 &cpu7 {
 	qcom,acc = <&cpu7_acc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
 };
 
 &soc {
