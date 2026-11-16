@@ -1426,6 +1426,118 @@ static const struct cpr_acc_desc qcs404_cpr_acc_desc = {
 	.acc_desc = &qcs404_acc_desc,
 };
 
+/*
+ * MSM8994 v2, fuse revision 3 or later.  The lowest fuse corner (SVS2) has
+ * no CPU frequency and is left out: these are fuse corners 2 to 4, with the
+ * revision adjustments of the quotients and initial voltages folded in.
+ * The Cortex-A53 rail also supplies the CCI and stays at 1.0 V or more.
+ */
+static const struct cpr_desc msm8994_apc0_cpr_desc = {
+	.num_fuse_corners = 3,
+	.vdd_apc_step_uV = 5000,
+	.step_quot = (int []){ 12, 12, 12, 12, 12, 12, 12, 12 },
+	.timer_delay_us = 5000,
+	.timer_cons_up = 0,
+	.timer_cons_down = 2,
+	.up_threshold = 2,
+	.down_threshold = 4,
+	.idle_clocks = 15,
+	.gcnt_us = 1,
+	.vdd_apc_step_up_limit = 1,
+	.vdd_apc_step_down_limit = 1,
+	.cpr_fuses = {
+		.init_voltage_step = 10000,
+		.init_voltage_width = 6,
+		.fuse_corner_data = (struct fuse_corner_data[]){
+			{
+				.ref_uV = 875000,
+				.max_uV = 1000000,
+				.min_uV = 1000000,
+				.quot_scale = 10,
+				.quot_adjust = -50,
+			},
+			{
+				.ref_uV = 975000,
+				.max_uV = 1000000,
+				.min_uV = 1000000,
+				.max_volt_scale = 2000,
+				.max_quot_scale = 2000,
+				.quot_scale = 10,
+				.quot_adjust = -90,
+			},
+			{
+				.ref_uV = 1225000,
+				.max_uV = 1180000,
+				.min_uV = 1000000,
+				.max_volt_scale = 2000,
+				.max_quot_scale = 2000,
+				.quot_scale = 10,
+			},
+		},
+	},
+	.reduce_to_corner_uV = true,
+};
+
+static const struct cpr_desc msm8994_apc1_cpr_desc = {
+	.num_fuse_corners = 3,
+	.vdd_apc_step_uV = 5000,
+	.step_quot = (int []){ 14, 14, 12, 12, 12, 12, 7, 8 },
+	.timer_delay_us = 5000,
+	.timer_cons_up = 0,
+	.timer_cons_down = 2,
+	.up_threshold = 2,
+	.down_threshold = 4,
+	.idle_clocks = 15,
+	.gcnt_us = 1,
+	.vdd_apc_step_up_limit = 1,
+	.vdd_apc_step_down_limit = 1,
+	.clamp_timer_interval = 1,
+	.cpr_fuses = {
+		.init_voltage_step = 10000,
+		.init_voltage_width = 6,
+		.fuse_corner_data = (struct fuse_corner_data[]){
+			{
+				.ref_uV = 900000,
+				.max_uV = 900000,
+				.min_uV = 700000,
+				.quot_scale = 10,
+			},
+			{
+				.ref_uV = 975000,
+				.max_uV = 1000000,
+				.min_uV = 750000,
+				.max_volt_scale = 2000,
+				.max_quot_scale = 2000,
+				.quot_scale = 10,
+				.quot_adjust = -105,
+			},
+			{
+				.ref_uV = 1190000,
+				.max_uV = 1225000,
+				.min_uV = 835000,
+				.max_volt_scale = 2000,
+				.max_quot_scale = 2000,
+				.quot_scale = 10,
+				.quot_adjust = -115,
+			},
+		},
+	},
+	.reduce_to_corner_uV = true,
+};
+
+/* The memory accelerator follows the clock, see clk-cpu-8994 */
+static const struct acc_desc msm8994_acc_desc = { };
+
+static const struct cpr_acc_desc msm8994_apc0_cpr_acc_desc = {
+	.cpr_desc = &msm8994_apc0_cpr_desc,
+	.acc_desc = &msm8994_acc_desc,
+};
+
+static const struct cpr_acc_desc msm8994_apc1_cpr_acc_desc = {
+	.cpr_desc = &msm8994_apc1_cpr_desc,
+	.acc_desc = &msm8994_acc_desc,
+};
+
 static int cpr_power_off(struct generic_pm_domain *domain)
 {
 	struct cpr_drv *drv = container_of(domain, struct cpr_drv, pd);
@@ -1724,6 +1836,8 @@ static void cpr_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id cpr_match_table[] = {
+	{ .compatible = "qcom,msm8994-apc0-cpr", .data = &msm8994_apc0_cpr_acc_desc },
+	{ .compatible = "qcom,msm8994-apc1-cpr", .data = &msm8994_apc1_cpr_acc_desc },
 	{ .compatible = "qcom,qcs404-cpr", .data = &qcs404_cpr_acc_desc },
 	{ }
 };
