@@ -158,6 +158,29 @@ static void mdp5_plane_cleanup_fb(struct drm_plane *plane,
 	msm_framebuffer_cleanup(fb, needed_dirtyfb);
 }
 
+static int mdp5_plane_drop_stale_hwpipes(struct drm_atomic_commit *s,
+					 struct drm_plane *plane,
+					 struct mdp5_plane_state *mdp5_state)
+{
+	struct mdp5_global_state *global;
+
+	if (!mdp5_state->hwpipe && !mdp5_state->r_hwpipe)
+		return 0;
+
+	global = mdp5_get_global_state(s);
+	if (IS_ERR(global))
+		return PTR_ERR(global);
+
+	if (mdp5_state->hwpipe &&
+	    global->hwpipe.hwpipe_to_plane[mdp5_state->hwpipe->idx] != plane)
+		mdp5_state->hwpipe = NULL;
+	if (mdp5_state->r_hwpipe &&
+	    global->hwpipe.hwpipe_to_plane[mdp5_state->r_hwpipe->idx] != plane)
+		mdp5_state->r_hwpipe = NULL;
+
+	return 0;
+}
+
 static int mdp5_plane_atomic_check_with_state(struct drm_crtc_state *crtc_state,
 					      struct drm_plane_state *state)
 {
@@ -209,6 +232,11 @@ static int mdp5_plane_atomic_check_with_state(struct drm_crtc_state *crtc_state,
 	ret = drm_atomic_helper_check_plane_state(state, crtc_state,
 						  min_scale, max_scale,
 						  true, true);
+	if (ret)
+		return ret;
+
+	/* A state restored after suspend names pipes it may no longer own */
+	ret = mdp5_plane_drop_stale_hwpipes(state->state, plane, mdp5_state);
 	if (ret)
 		return ret;
 
