@@ -140,15 +140,8 @@ struct msm_gpu *adreno_load_gpu(struct drm_device *dev)
 	if (adreno_is_a430(adreno_gpu) &&
 	    of_machine_is_compatible("qcom,msm8994")) {
 		msm8994_oxili_mark_gpu_live();
-		/*
-		 * First hw_init works. put_autosuspend then TIMESTAMP
-		 * get_sync: iommu scm(18) with GX off returns -EINVAL
-		 * and the SoC SEAs. Keep this get_sync so the rails
-		 * and SMMU stay up. Do not put GX on &gpu.
-		 */
-	} else {
-		pm_runtime_put_autosuspend(&pdev->dev);
 	}
+	pm_runtime_put_autosuspend(&pdev->dev);
 
 #ifdef CONFIG_DEBUG_FS
 	if (gpu->funcs->debugfs_init) {
