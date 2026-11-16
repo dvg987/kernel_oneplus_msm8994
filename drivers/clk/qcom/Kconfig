@@ -359,6 +359,7 @@ config QCOM_CLK_CPU_MSM8994
 	tristate "MSM8994 CPU Clock Controller"
 	depends on ARCH_QCOM || COMPILE_TEST
 	select MFD_SYSCON
+	select QCOM_SCM
 	select REGMAP_MMIO
 	help
 	  Support for the CPU clock controller of MSM8994: the PLLs and

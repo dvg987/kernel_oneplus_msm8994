@@ -22,6 +22,7 @@
 #include <linux/clk-provider.h>
 #include <linux/cpumask.h>
 #include <linux/delay.h>
+#include <linux/firmware/qcom/qcom_scm.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -71,6 +72,25 @@
 #define  MUX_HF_PLL1		1
 #define  MUX_HF_PLL0		3
 
+/*
+ * Memory accelerator settings of a cluster, secure registers in its APCS
+ * global block: one set up to @low_max Hz, where the rail may be below
+ * 0.9 V, and one above.
+ */
+struct cpu_8994_mem_acc {
+	u32 reg[4];
+	u32 low[4];
+	u32 high[4];
+	unsigned long low_max;
+};
+
+static const struct cpu_8994_mem_acc cpu_8994_a57_mem_acc = {
+	.reg = { 0xf900f084, 0xf900f088, 0xf900f08c, 0xf900f090 },
+	.low = { 0x02, 0x02, 0x02, 0x0b },
+	.high = { 0x06, 0x06, 0x06, 0x0b },
+	.low_max = 633600000,
+};
+
 struct cpu_8994_cluster {
 	struct clk_hw hw;
 	struct regmap *pll;
@@ -78,6 +98,8 @@ struct cpu_8994_cluster {
 	u32 user_ctl;		/* of the PLL in use at boot */
 	struct cpumask cpus;
 	struct pm_qos_request qos;
+	const struct cpu_8994_mem_acc *mem_acc;
+	bool mem_acc_low;
 };
 
 #define to_cluster(_hw) container_of(_hw, struct cpu_8994_cluster, hw)
@@ -249,9 +271,27 @@ static int cpu_8994_pll_enable(struct cpu_8994_cluster *c, unsigned int n,
 	return 0;
 }
 
-static int cpu_8994_switch(struct cpu_8994_cluster *c, u32 l,
-			   unsigned int div)
+static int cpu_8994_set_mem_acc(struct cpu_8994_cluster *c, bool low)
 {
+	const struct cpu_8994_mem_acc *acc = c->mem_acc;
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < ARRAY_SIZE(acc->reg); i++) {
+		ret = qcom_scm_io_writel(acc->reg[i],
+					 low ? acc->low[i] : acc->high[i]);
+		if (ret)
+			return ret;
+	}
+	c->mem_acc_low = low;
+
+	return 0;
+}
+
+static int cpu_8994_switch(struct cpu_8994_cluster *c, u32 l,
+			   unsigned int div, unsigned long rate)
+{
+	bool low = c->mem_acc && rate <= c->mem_acc->low_max;
 	unsigned int old_div;
 	int old, new, ret;
 	u32 mux;
@@ -262,6 +302,15 @@ static int cpu_8994_switch(struct cpu_8994_cluster *c, u32 l,
 	ret = cpu_8994_pll_enable(c, new, l, div);
 	if (ret)
 		return ret;
+
+	/* Up: the rail has been raised already, the clock goes up next */
+	if (c->mem_acc && !low && c->mem_acc_low) {
+		ret = cpu_8994_set_mem_acc(c, false);
+		if (ret) {
+			cpu_8994_pll_disable(c, new);
+			return ret;
+		}
+	}
 
 	if (div == 1) {
 		regmap_update_bits(c->glb, MUX_REG, MUX_HF,
@@ -288,6 +337,9 @@ static int cpu_8994_switch(struct cpu_8994_cluster *c, u32 l,
 	if (old >= 0)
 		cpu_8994_pll_disable(c, old);
 
+	/* Down: the clock is down, the rail is lowered next */
+	if (c->mem_acc && low && !c->mem_acc_low)
+		return cpu_8994_set_mem_acc(c, true);
 
 	return 0;
 }
@@ -311,7 +363,7 @@ static int cpu_8994_set_rate(struct clk_hw *hw, unsigned long rate,
 	cpu_latency_qos_add_request(&c->qos, 0);
 	on_each_cpu_mask(&c->cpus, cpu_8994_wake, NULL, true);
 
-	ret = cpu_8994_switch(c, l, div);
+	ret = cpu_8994_switch(c, l, div, rate);
 
 	cpu_latency_qos_remove_request(&c->qos);
 
@@ -365,6 +417,9 @@ static int cpu_8994_probe(struct platform_device *pdev)
 	struct clk_hw_onecell_data *data;
 	unsigned int i;
 	int ret;
+
+	if (!qcom_scm_is_available())
+		return -EPROBE_DEFER;
 
 	data = devm_kzalloc(dev, struct_size(data, hws,
 					     ARRAY_SIZE(cpu_8994_names)),
@@ -428,6 +483,14 @@ static int cpu_8994_probe(struct platform_device *pdev)
 			return ret;
 		data->hws[i] = &c->hw;
 
+		if (i == 1) {
+			c->mem_acc = &cpu_8994_a57_mem_acc;
+			ret = cpu_8994_set_mem_acc(c, clk_hw_get_rate(&c->hw) <=
+						      c->mem_acc->low_max);
+			if (ret)
+				return dev_err_probe(dev, ret,
+						     "cannot set the mem-acc\n");
+		}
 	}
 
 	return devm_of_clk_add_hw_provider(dev, of_clk_hw_onecell_get, data);
