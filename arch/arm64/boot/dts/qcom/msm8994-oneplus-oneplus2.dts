@@ -1805,7 +1805,6 @@
 &pcie1_port {
 	compatible = "pciclass,0604";
 	reset-gpios = <&tlmm 35 GPIO_ACTIVE_LOW>;
-	wake-gpios = <&tlmm 37 GPIO_ACTIVE_LOW>;
 	vpcie3v3-supply = <&vreg_wlan_en>;
 };
 
