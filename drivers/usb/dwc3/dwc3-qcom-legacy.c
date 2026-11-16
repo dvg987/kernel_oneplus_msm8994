@@ -1026,9 +1026,31 @@ static int __maybe_unused dwc3_qcom_pm_resume(struct device *dev)
 	bool wakeup = device_may_wakeup(dev);
 	int ret;
 
+	/*
+	 * QSCRATCH and the HS PHY lose their setup when the USB30 GDSC
+	 * collapses in suspend, and the core cannot start again: reset the
+	 * block and set it up as at probe, before the core resumes.
+	 */
+	if (qcom->qscratch_hs_phy) {
+		reset_control_assert(qcom->resets);
+		usleep_range(1000, 1200);
+		reset_control_deassert(qcom->resets);
+	}
+
 	ret = dwc3_qcom_resume(qcom, wakeup);
 	if (ret)
 		return ret;
+
+	if (qcom->qscratch_hs_phy) {
+		ret = dwc3_qcom_select_primary_port(qcom);
+		if (ret)
+			return ret;
+		if (device_property_read_bool(dev, "qcom,select-utmi-as-pipe-clk"))
+			dwc3_qcom_select_utmi_clk(qcom);
+		dwc3_qcom_qscratch_hs_phy_init(qcom);
+		if (qcom->mode != USB_DR_MODE_HOST)
+			dwc3_qcom_vbus_override_enable(qcom, true);
+	}
 
 	qcom->pm_suspended = false;
 
