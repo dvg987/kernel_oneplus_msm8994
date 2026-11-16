@@ -44,6 +44,7 @@ struct msm_mdss {
 	struct icc_path *mdp_path[2];
 	u32 num_mdp_paths;
 	struct icc_path *reg_bus_path;
+	struct device_link *iommu_link;
 };
 
 static int msm_mdss_parse_data_bus_icc_path(struct device *dev,
@@ -466,6 +467,39 @@ static const struct dev_pm_ops mdss_pm_ops = {
 	SET_RUNTIME_PM_OPS(mdss_runtime_suspend, mdss_runtime_resume, NULL)
 };
 
+/* A TrustZone managed SMMU must be resumed whenever MDSS is */
+static int msm_mdss_link_secure_iommu(struct msm_mdss *mdss)
+{
+	struct device *dev = mdss->dev;
+	struct platform_device *iommu;
+	struct device_node *child, *np;
+
+	for_each_available_child_of_node(dev->of_node, child) {
+		np = of_parse_phandle(child, "iommus", 0);
+		if (!np)
+			continue;
+		if (!of_property_present(np, "qcom,iommu-secure-id")) {
+			of_node_put(np);
+			continue;
+		}
+
+		iommu = of_find_device_by_node(np);
+		of_node_put(np);
+		of_node_put(child);
+		if (!iommu)
+			return -EPROBE_DEFER;
+
+		mdss->iommu_link = device_link_add(dev, &iommu->dev,
+						   DL_FLAG_STATELESS |
+						   DL_FLAG_PM_RUNTIME);
+		put_device(&iommu->dev);
+
+		return mdss->iommu_link ? 0 : -EINVAL;
+	}
+
+	return 0;
+}
+
 static int mdss_probe(struct platform_device *pdev)
 {
 	struct msm_mdss *mdss;
@@ -479,6 +513,12 @@ static int mdss_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, mdss);
 
+	ret = msm_mdss_link_secure_iommu(mdss);
+	if (ret) {
+		msm_mdss_destroy(mdss);
+		return ret;
+	}
+
 	/*
 	 * MDP5/DPU based devices don't have a flat hierarchy. There is a top
 	 * level parent: MDSS, and children: MDP5/DPU, DSI, HDMI, eDP etc.
@@ -488,6 +528,8 @@ static int mdss_probe(struct platform_device *pdev)
 	ret = of_platform_populate(dev->of_node, NULL, NULL, dev);
 	if (ret) {
 		DRM_DEV_ERROR(dev, "failed to populate children devices\n");
+		if (mdss->iommu_link)
+			device_link_del(mdss->iommu_link);
 		msm_mdss_destroy(mdss);
 		return ret;
 	}
@@ -501,6 +543,8 @@ static void mdss_remove(struct platform_device *pdev)
 
 	of_platform_depopulate(&pdev->dev);
 
+	if (mdss->iommu_link)
+		device_link_del(mdss->iommu_link);
 	msm_mdss_destroy(mdss);
 }
 
