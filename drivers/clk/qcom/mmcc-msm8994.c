@@ -2632,6 +2632,9 @@ int msm8994_oxili_pre_gpu_power(void)
 	if (!oxili_gx || !oxili_gx->pd.power_on || !oxili_cx_gdsc.pd.power_on)
 		return -ENODEV;
 
+	if (oxili_pre_gpu_voted)
+		return 0;
+
 	ret = oxili_gx->pd.power_on(&oxili_gx->pd);
 	if (ret)
 		return ret;
@@ -2642,6 +2645,42 @@ int msm8994_oxili_pre_gpu_power(void)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(msm8994_oxili_pre_gpu_power);
+
+/* Undo msm8994_oxili_pre_gpu_power() */
+static void msm8994_oxili_gpu_power_off(void)
+{
+	struct clk *src;
+
+	if (!oxili_pre_gpu_voted)
+		return;
+
+	oxili_gx->pd.power_off(&oxili_gx->pd);
+	if (!IS_ERR_OR_NULL(oxili_gfx3d_src)) {
+		src = clk_get_parent(oxili_gfx3d_src);
+		if (src)
+			clk_disable_unprepare(src);
+	}
+	oxili_pre_gpu_voted = false;
+}
+
+/*
+ * The downstream driver turns the GPU CX GDSC off before GX, and GX on
+ * before CX: follow the CX domain.
+ */
+static int oxili_cx_notify(struct notifier_block *nb, unsigned long action,
+			   void *data)
+{
+	if (action == GENPD_NOTIFY_OFF)
+		msm8994_oxili_gpu_power_off();
+	else if (action == GENPD_NOTIFY_PRE_ON && oxili_gpu_live)
+		msm8994_oxili_pre_gpu_power();
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block oxili_cx_nb = {
+	.notifier_call = oxili_cx_notify,
+};
 
 int msm8994_oxili_pre_gpu_power_if_live(void)
 {
@@ -2710,6 +2749,8 @@ static int mmcc_msm8994_probe(struct platform_device *pdev)
 		oxili_gx_hw_power_on = oxili_gx->pd.power_on;
 		if (oxili_gx_hw_power_on)
 			oxili_gx->pd.power_on = oxili_gx_pd_power_on;
+		raw_notifier_chain_register(&oxili_cx_gdsc.pd.power_notifiers,
+					    &oxili_cx_nb);
 	}
 	return 0;
 }
