@@ -864,12 +864,10 @@
 };
 
 /*
- * CPU frequency scaling.  Frequencies and voltages are the stock v2 tables
- * (qcom,a53/a57-speedbin0-v0 and the CPR ceiling of each corner): the stock
- * kernel never runs a frequency above its ceiling voltage, and CPR is not
- * modelled here, so each step gets the ceiling itself.  Nothing goes below
- * the 1.0 V the bootloader leaves: lower corners need other memory
- * accelerator settings, and the CCI runs from the Cortex-A53 rail.
+ * CPU frequency scaling.  Frequencies are the stock v2 tables
+ * (qcom,a53/a57-speedbin0-v0); CPR is not modelled here, so each step gets
+ * the open loop voltage of its fuse corner on this board.  The Cortex-A53
+ * rail stays at 1.0 V or more as the CCI runs from it.
  * The top stock steps (Cortex-A57 above 1536 MHz, 1.225 V) are left out:
  * the SoC idles around 60 C and resets itself at 115 C.
  */
@@ -910,22 +908,22 @@
 		};
 		opp-1248000000 {
 			opp-hz = /bits/ 64 <1248000000>;
-			opp-microvolt = <1180000>;
+			opp-microvolt = <1115000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1344000000 {
 			opp-hz = /bits/ 64 <1344000000>;
-			opp-microvolt = <1180000>;
+			opp-microvolt = <1115000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1478400000 {
 			opp-hz = /bits/ 64 <1478400000>;
-			opp-microvolt = <1180000>;
+			opp-microvolt = <1115000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1555200000 {
 			opp-hz = /bits/ 64 <1555200000>;
-			opp-microvolt = <1180000>;
+			opp-microvolt = <1115000>;
 			clock-latency-ns = <300000>;
 		};
 	};
@@ -936,52 +934,52 @@
 
 		opp-384000000 {
 			opp-hz = /bits/ 64 <384000000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <830000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-480000000 {
 			opp-hz = /bits/ 64 <480000000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <830000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-633600000 {
 			opp-hz = /bits/ 64 <633600000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <830000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-768000000 {
 			opp-hz = /bits/ 64 <768000000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <930000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-864000000 {
 			opp-hz = /bits/ 64 <864000000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <930000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-960000000 {
 			opp-hz = /bits/ 64 <960000000>;
-			opp-microvolt = <1000000>;
+			opp-microvolt = <930000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1248000000 {
 			opp-hz = /bits/ 64 <1248000000>;
-			opp-microvolt = <1160000>;
+			opp-microvolt = <1065000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1344000000 {
 			opp-hz = /bits/ 64 <1344000000>;
-			opp-microvolt = <1160000>;
+			opp-microvolt = <1065000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1440000000 {
 			opp-hz = /bits/ 64 <1440000000>;
-			opp-microvolt = <1160000>;
+			opp-microvolt = <1065000>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1536000000 {
 			opp-hz = /bits/ 64 <1536000000>;
-			opp-microvolt = <1160000>;
+			opp-microvolt = <1065000>;
 			clock-latency-ns = <300000>;
 		};
 	};
@@ -991,15 +989,15 @@
 	/* VDD_APC0: Cortex-A53 cluster and CCI */
 	vdd_apc0: s8 {
 		regulator-min-microvolt = <1000000>;
-		regulator-max-microvolt = <1180000>;
+		regulator-max-microvolt = <1115000>;
 		regulator-always-on;
 		regulator-boot-on;
 	};
 
 	/* VDD_APC1: Cortex-A57 cluster, S11 leads S9 and S10 */
 	vdd_apc1: s11 {
-		regulator-min-microvolt = <1000000>;
-		regulator-max-microvolt = <1160000>;
+		regulator-min-microvolt = <830000>;
+		regulator-max-microvolt = <1065000>;
 		regulator-always-on;
 		regulator-boot-on;
 	};
