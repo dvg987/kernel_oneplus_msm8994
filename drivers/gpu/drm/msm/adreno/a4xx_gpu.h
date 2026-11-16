@@ -17,6 +17,8 @@ struct a4xx_gpu {
 
 	/* if OCMEM is used for GMEM: */
 	struct adreno_ocmem ocmem;
+
+	struct icc_path *icc_path;
 };
 #define to_a4xx_gpu(x) container_of(x, struct a4xx_gpu, base)
 

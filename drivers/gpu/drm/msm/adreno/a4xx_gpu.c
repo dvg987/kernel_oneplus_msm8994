@@ -611,13 +611,26 @@ static void a4xx_dump(struct msm_gpu *gpu)
 	adreno_dump(gpu);
 }
 
+static void a4xx_set_bw(struct msm_gpu *gpu, bool on)
+{
+	struct a4xx_gpu *a4xx_gpu = to_a4xx_gpu(to_adreno_gpu(gpu));
+	/* The fastest GPU clock times the width of the bus, 8 bytes */
+	u32 peak = on ? Bps_to_icc(gpu->fast_rate) * 8 : 0;
+
+	icc_set_bw(a4xx_gpu->icc_path, 0, peak);
+}
+
 static int a4xx_pm_resume(struct msm_gpu *gpu) {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	int ret;
 
+	a4xx_set_bw(gpu, true);
+
 	ret = msm_gpu_pm_resume(gpu);
-	if (ret)
+	if (ret) {
+		a4xx_set_bw(gpu, false);
 		return ret;
+	}
 
 	if (adreno_is_a430(adreno_gpu)) {
 		unsigned int reg;
@@ -633,13 +646,20 @@ static int a4xx_pm_resume(struct msm_gpu *gpu) {
 
 static int a4xx_pm_suspend(struct msm_gpu *gpu) {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
+	int ret;
 
 	if (adreno_is_a430(adreno_gpu)) {
 		/* Set the default register values; set SW_COLLAPSE to 1 */
 		gpu_write(gpu, REG_A4XX_RBBM_POWER_CNTL_IP, 0x778001);
 	}
 
-	return msm_gpu_pm_suspend(gpu);
+	ret = msm_gpu_pm_suspend(gpu);
+	if (ret)
+		return ret;
+
+	a4xx_set_bw(gpu, false);
+
+	return 0;
 }
 
 static u64 a4xx_get_timestamp(struct msm_gpu *gpu)
@@ -718,12 +738,9 @@ static struct msm_gpu *a4xx_gpu_init(struct drm_device *dev)
 		ocmem_icc_path = NULL;
 	}
 
-	/*
-	 * Set the ICC path to maximum speed for now by multiplying the fastest
-	 * frequency by the bus width (8). We'll want to scale this later on to
-	 * improve battery life.
-	 */
-	icc_set_bw(icc_path, 0, Bps_to_icc(gpu->fast_rate) * 8);
+	/* Voted for while the GPU is resumed, from a4xx_pm_resume() */
+	a4xx_gpu->icc_path = icc_path;
+	/* The A430 renders nothing after a resume without this vote */
 	icc_set_bw(ocmem_icc_path, 0, Bps_to_icc(gpu->fast_rate) * 8);
 
 	return gpu;
