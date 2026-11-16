@@ -162,6 +162,16 @@
 	};
 };
 
+&apc0_cpr {
+	vdd-apc-supply = <&vdd_apc0>;
+	status = "okay";
+};
+
+&apc1_cpr {
+	vdd-apc-supply = <&vdd_apc1>;
+	status = "okay";
+};
+
 &blsp1_uart2 {
 	status = "okay";
 };
@@ -865,121 +875,119 @@
 
 /*
  * CPU frequency scaling.  Frequencies are the stock v2 tables
- * (qcom,a53/a57-speedbin0-v0); CPR is not modelled here, so each step gets
- * the open loop voltage of its fuse corner on this board.  The Cortex-A53
- * rail stays at 1.0 V or more as the CCI runs from it.
+ * (qcom,a53/a57-speedbin0-v0); CPR sets the voltage of each step.
  * The top stock steps (Cortex-A57 above 1536 MHz, 1.225 V) are left out:
  * the SoC idles around 60 C and resets itself at 115 C.
  */
 / {
 	cpu0_opp_table: opp-table-cluster0 {
-		compatible = "operating-points-v2";
+		compatible = "operating-points-v2-kryo-cpu";
 		opp-shared;
 
 		opp-384000000 {
 			opp-hz = /bits/ 64 <384000000>;
-			opp-microvolt = <1000000>;
+			required-opps = <&apc0_cpr_opp1>;
 			clock-latency-ns = <300000>;
 		};
 		opp-460800000 {
 			opp-hz = /bits/ 64 <460800000>;
-			opp-microvolt = <1000000>;
+			required-opps = <&apc0_cpr_opp2>;
 			clock-latency-ns = <300000>;
 		};
 		opp-672000000 {
 			opp-hz = /bits/ 64 <672000000>;
-			opp-microvolt = <1000000>;
+			required-opps = <&apc0_cpr_opp3>;
 			clock-latency-ns = <300000>;
 		};
 		opp-768000000 {
 			opp-hz = /bits/ 64 <768000000>;
-			opp-microvolt = <1000000>;
+			required-opps = <&apc0_cpr_opp4>;
 			clock-latency-ns = <300000>;
 		};
 		opp-864000000 {
 			opp-hz = /bits/ 64 <864000000>;
-			opp-microvolt = <1115000>;
+			required-opps = <&apc0_cpr_opp5>;
 			clock-latency-ns = <300000>;
 		};
 		opp-960000000 {
 			opp-hz = /bits/ 64 <960000000>;
-			opp-microvolt = <1115000>;
+			required-opps = <&apc0_cpr_opp6>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1248000000 {
 			opp-hz = /bits/ 64 <1248000000>;
-			opp-microvolt = <1115000>;
+			required-opps = <&apc0_cpr_opp7>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1344000000 {
 			opp-hz = /bits/ 64 <1344000000>;
-			opp-microvolt = <1115000>;
+			required-opps = <&apc0_cpr_opp8>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1478400000 {
 			opp-hz = /bits/ 64 <1478400000>;
-			opp-microvolt = <1115000>;
+			required-opps = <&apc0_cpr_opp9>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1555200000 {
 			opp-hz = /bits/ 64 <1555200000>;
-			opp-microvolt = <1115000>;
+			required-opps = <&apc0_cpr_opp10>;
 			clock-latency-ns = <300000>;
 		};
 	};
 
 	cpu4_opp_table: opp-table-cluster1 {
-		compatible = "operating-points-v2";
+		compatible = "operating-points-v2-kryo-cpu";
 		opp-shared;
 
 		opp-384000000 {
 			opp-hz = /bits/ 64 <384000000>;
-			opp-microvolt = <830000>;
+			required-opps = <&apc1_cpr_opp1>;
 			clock-latency-ns = <300000>;
 		};
 		opp-480000000 {
 			opp-hz = /bits/ 64 <480000000>;
-			opp-microvolt = <830000>;
+			required-opps = <&apc1_cpr_opp2>;
 			clock-latency-ns = <300000>;
 		};
 		opp-633600000 {
 			opp-hz = /bits/ 64 <633600000>;
-			opp-microvolt = <830000>;
+			required-opps = <&apc1_cpr_opp3>;
 			clock-latency-ns = <300000>;
 		};
 		opp-768000000 {
 			opp-hz = /bits/ 64 <768000000>;
-			opp-microvolt = <930000>;
+			required-opps = <&apc1_cpr_opp4>;
 			clock-latency-ns = <300000>;
 		};
 		opp-864000000 {
 			opp-hz = /bits/ 64 <864000000>;
-			opp-microvolt = <930000>;
+			required-opps = <&apc1_cpr_opp5>;
 			clock-latency-ns = <300000>;
 		};
 		opp-960000000 {
 			opp-hz = /bits/ 64 <960000000>;
-			opp-microvolt = <930000>;
+			required-opps = <&apc1_cpr_opp6>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1248000000 {
 			opp-hz = /bits/ 64 <1248000000>;
-			opp-microvolt = <1065000>;
+			required-opps = <&apc1_cpr_opp7>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1344000000 {
 			opp-hz = /bits/ 64 <1344000000>;
-			opp-microvolt = <1065000>;
+			required-opps = <&apc1_cpr_opp8>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1440000000 {
 			opp-hz = /bits/ 64 <1440000000>;
-			opp-microvolt = <1065000>;
+			required-opps = <&apc1_cpr_opp9>;
 			clock-latency-ns = <300000>;
 		};
 		opp-1536000000 {
 			opp-hz = /bits/ 64 <1536000000>;
-			opp-microvolt = <1065000>;
+			required-opps = <&apc1_cpr_opp10>;
 			clock-latency-ns = <300000>;
 		};
 	};
@@ -989,15 +997,15 @@
 	/* VDD_APC0: Cortex-A53 cluster and CCI */
 	vdd_apc0: s8 {
 		regulator-min-microvolt = <1000000>;
-		regulator-max-microvolt = <1115000>;
+		regulator-max-microvolt = <1180000>;
 		regulator-always-on;
 		regulator-boot-on;
 	};
 
 	/* VDD_APC1: Cortex-A57 cluster, S11 leads S9 and S10 */
 	vdd_apc1: s11 {
-		regulator-min-microvolt = <830000>;
-		regulator-max-microvolt = <1065000>;
+		regulator-min-microvolt = <700000>;
+		regulator-max-microvolt = <1225000>;
 		regulator-always-on;
 		regulator-boot-on;
 	};
@@ -1006,49 +1014,57 @@
 &cpu0 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu0_opp_table>;
-	cpu-supply = <&vdd_apc0>;
+	power-domains = <&apc0_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu1 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu0_opp_table>;
-	cpu-supply = <&vdd_apc0>;
+	power-domains = <&apc0_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu2 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu0_opp_table>;
-	cpu-supply = <&vdd_apc0>;
+	power-domains = <&apc0_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu3 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu0_opp_table>;
-	cpu-supply = <&vdd_apc0>;
+	power-domains = <&apc0_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu4 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu4_opp_table>;
-	cpu-supply = <&vdd_apc1>;
+	power-domains = <&apc1_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu5 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu4_opp_table>;
-	cpu-supply = <&vdd_apc1>;
+	power-domains = <&apc1_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu6 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu4_opp_table>;
-	cpu-supply = <&vdd_apc1>;
+	power-domains = <&apc1_cpr>;
+	power-domain-names = "cpr";
 };
 
 &cpu7 {
 	#cooling-cells = <2>;
 	operating-points-v2 = <&cpu4_opp_table>;
-	cpu-supply = <&vdd_apc1>;
+	power-domains = <&apc1_cpr>;
+	power-domain-names = "cpr";
 };
 
 /*
