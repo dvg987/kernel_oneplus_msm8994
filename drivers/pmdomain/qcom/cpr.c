@@ -180,6 +180,7 @@ struct cpr_desc {
 	unsigned int		clamp_timer_interval;
 
 	struct cpr_fuses cpr_fuses;
+	int vdd_apc_step_uV;	/* if the regulator has no single step */
 	bool reduce_to_fuse_uV;
 	bool reduce_to_corner_uV;
 };
@@ -249,6 +250,13 @@ struct cpr_drv {
 
 	struct fuse_corner	fuse_corners[];
 };
+
+static int cpr_get_step_uV(struct cpr_drv *drv)
+{
+	int step = regulator_get_linear_step(drv->vdd_apc);
+
+	return step ?: drv->desc->vdd_apc_step_uV;
+}
 
 static bool cpr_is_allowed(struct cpr_drv *drv)
 {
@@ -469,7 +477,7 @@ static int cpr_scale(struct cpr_drv *drv, enum voltage_change_dir dir)
 	if (dir != UP && dir != DOWN)
 		return 0;
 
-	step_uV = regulator_get_linear_step(drv->vdd_apc);
+	step_uV = cpr_get_step_uV(drv);
 	if (!step_uV)
 		return -EINVAL;
 
@@ -856,7 +864,7 @@ static int cpr_fuse_corner_init(struct cpr_drv *drv)
 
 	accs = acc_desc->settings;
 
-	step_volt = regulator_get_linear_step(drv->vdd_apc);
+	step_volt = cpr_get_step_uV(drv);
 	if (!step_volt)
 		return -EINVAL;
 
@@ -1077,7 +1085,7 @@ static int cpr_corner_init(struct cpr_drv *drv)
 	bool apply_scaling;
 	unsigned long freq_diff, freq_diff_mhz;
 	unsigned long freq;
-	int step_volt = regulator_get_linear_step(drv->vdd_apc);
+	int step_volt = cpr_get_step_uV(drv);
 	struct dev_pm_opp *opp;
 
 	if (!step_volt)
