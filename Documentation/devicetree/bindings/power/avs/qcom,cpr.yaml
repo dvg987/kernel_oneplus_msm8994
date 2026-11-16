@@ -21,6 +21,8 @@ properties:
   compatible:
     items:
       - enum:
+          - qcom,msm8994-apc0-cpr
+          - qcom,msm8994-apc1-cpr
           - qcom,qcs404-cpr
       - const: qcom,cpr
 
@@ -55,36 +57,12 @@ properties:
     description: A phandle to the syscon used for writing ACC settings.
 
   nvmem-cells:
-    items:
-      - description: Corner 1 quotient offset
-      - description: Corner 2 quotient offset
-      - description: Corner 3 quotient offset
-      - description: Corner 1 initial voltage
-      - description: Corner 2 initial voltage
-      - description: Corner 3 initial voltage
-      - description: Corner 1 quotient
-      - description: Corner 2 quotient
-      - description: Corner 3 quotient
-      - description: Corner 1 ring oscillator
-      - description: Corner 2 ring oscillator
-      - description: Corner 3 ring oscillator
-      - description: Fuse revision
+    minItems: 9
+    maxItems: 13
 
   nvmem-cell-names:
-    items:
-      - const: cpr_quotient_offset1
-      - const: cpr_quotient_offset2
-      - const: cpr_quotient_offset3
-      - const: cpr_init_voltage1
-      - const: cpr_init_voltage2
-      - const: cpr_init_voltage3
-      - const: cpr_quotient1
-      - const: cpr_quotient2
-      - const: cpr_quotient3
-      - const: cpr_ring_osc1
-      - const: cpr_ring_osc2
-      - const: cpr_ring_osc3
-      - const: cpr_fuse_revision
+    minItems: 9
+    maxItems: 13
 
 required:
   - compatible
@@ -97,6 +75,84 @@ required:
   - operating-points-v2
   - nvmem-cells
   - nvmem-cell-names
+
+allOf:
+  - if:
+      properties:
+        compatible:
+          contains:
+            const: qcom,qcs404-cpr
+    then:
+      properties:
+        nvmem-cells:
+          items:
+            - description: Corner 1 quotient offset
+            - description: Corner 2 quotient offset
+            - description: Corner 3 quotient offset
+            - description: Corner 1 initial voltage
+            - description: Corner 2 initial voltage
+            - description: Corner 3 initial voltage
+            - description: Corner 1 quotient
+            - description: Corner 2 quotient
+            - description: Corner 3 quotient
+            - description: Corner 1 ring oscillator
+            - description: Corner 2 ring oscillator
+            - description: Corner 3 ring oscillator
+            - description: Fuse revision
+
+        nvmem-cell-names:
+          items:
+            - const: cpr_quotient_offset1
+            - const: cpr_quotient_offset2
+            - const: cpr_quotient_offset3
+            - const: cpr_init_voltage1
+            - const: cpr_init_voltage2
+            - const: cpr_init_voltage3
+            - const: cpr_quotient1
+            - const: cpr_quotient2
+            - const: cpr_quotient3
+            - const: cpr_ring_osc1
+            - const: cpr_ring_osc2
+            - const: cpr_ring_osc3
+            - const: cpr_fuse_revision
+
+      required:
+        - acc-syscon
+
+  - if:
+      properties:
+        compatible:
+          contains:
+            enum:
+              - qcom,msm8994-apc0-cpr
+              - qcom,msm8994-apc1-cpr
+    then:
+      properties:
+        acc-syscon: false
+
+        nvmem-cells:
+          items:
+            - description: Corner 1 initial voltage
+            - description: Corner 2 initial voltage
+            - description: Corner 3 initial voltage
+            - description: Corner 1 quotient
+            - description: Corner 2 quotient
+            - description: Corner 3 quotient
+            - description: Corner 1 ring oscillator
+            - description: Corner 2 ring oscillator
+            - description: Corner 3 ring oscillator
+
+        nvmem-cell-names:
+          items:
+            - const: cpr_init_voltage1
+            - const: cpr_init_voltage2
+            - const: cpr_init_voltage3
+            - const: cpr_quotient1
+            - const: cpr_quotient2
+            - const: cpr_quotient3
+            - const: cpr_ring_osc1
+            - const: cpr_ring_osc2
+            - const: cpr_ring_osc3
 
 additionalProperties: false
 
