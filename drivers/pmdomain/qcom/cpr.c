@@ -1593,7 +1593,7 @@ DEFINE_SHOW_ATTRIBUTE(cpr_debug_info);
 
 static void cpr_debugfs_init(struct cpr_drv *drv)
 {
-	drv->debugfs = debugfs_create_dir("qcom_cpr", NULL);
+	drv->debugfs = debugfs_create_dir(dev_name(drv->dev), NULL);
 
 	debugfs_create_file("debug_info", 0444, drv->debugfs,
 			    drv, &cpr_debug_info_fops);
