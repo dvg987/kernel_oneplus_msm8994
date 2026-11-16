@@ -204,7 +204,7 @@ dsi_get_config(struct msm_dsi_host *msm_host)
 {
 	const struct msm_dsi_cfg_handler *cfg_hnd = NULL;
 	struct device *dev = &msm_host->pdev->dev;
-	struct clk *ahb_clk;
+	struct clk *ahb_clk, *mdp_clk;
 	int ret;
 	u32 major = 0, minor = 0;
 
@@ -223,6 +223,19 @@ dsi_get_config(struct msm_dsi_host *msm_host)
 		goto runtime_put;
 	}
 
+	mdp_clk = devm_clk_get_optional(dev, "mdp_core");
+	if (IS_ERR(mdp_clk)) {
+		ret = PTR_ERR(mdp_clk);
+		dev_err_probe(dev, ret, "%s: cannot get mdp_core clock\n", __func__);
+		goto disable_ahb;
+	}
+
+	ret = clk_prepare_enable(mdp_clk);
+	if (ret) {
+		dev_err_probe(dev, ret, "%s: unable to enable mdp_core clock\n", __func__);
+		goto disable_ahb;
+	}
+
 	ret = dsi_get_version(msm_host->ctrl_base, &major, &minor);
 	if (ret) {
 		dev_err_probe(dev, ret, "%s: Invalid version\n", __func__);
@@ -234,6 +247,8 @@ dsi_get_config(struct msm_dsi_host *msm_host)
 	DBG("%s: Version %x:%x\n", __func__, major, minor);
 
 disable_clks:
+	clk_disable_unprepare(mdp_clk);
+disable_ahb:
 	clk_disable_unprepare(ahb_clk);
 runtime_put:
 	pm_runtime_put_sync(dev);
