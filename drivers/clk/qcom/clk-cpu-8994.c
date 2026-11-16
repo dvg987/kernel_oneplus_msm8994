@@ -20,12 +20,15 @@
 #include <linux/bitfield.h>
 #include <linux/bits.h>
 #include <linux/clk-provider.h>
+#include <linux/cpumask.h>
 #include <linux/delay.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/pm_qos.h>
 #include <linux/regmap.h>
+#include <linux/smp.h>
 
 #define PLL_VCO_MIN		1209600000UL
 #define PLL_VCO_MAX		1996800000UL
@@ -73,6 +76,8 @@ struct cpu_8994_cluster {
 	struct regmap *pll;
 	struct regmap *glb;
 	u32 user_ctl;		/* of the PLL in use at boot */
+	struct cpumask cpus;
+	struct pm_qos_request qos;
 };
 
 #define to_cluster(_hw) container_of(_hw, struct cpu_8994_cluster, hw)
@@ -244,16 +249,12 @@ static int cpu_8994_pll_enable(struct cpu_8994_cluster *c, unsigned int n,
 	return 0;
 }
 
-static int cpu_8994_set_rate(struct clk_hw *hw, unsigned long rate,
-			     unsigned long parent_rate)
+static int cpu_8994_switch(struct cpu_8994_cluster *c, u32 l,
+			   unsigned int div)
 {
-	struct cpu_8994_cluster *c = to_cluster(hw);
-	unsigned int div, old_div;
+	unsigned int old_div;
 	int old, new, ret;
-	u32 l, mux;
-
-	if (cpu_8994_config(rate, parent_rate, &l, &div) != rate)
-		return -EINVAL;
+	u32 mux;
 
 	old = cpu_8994_cur_pll(c, &old_div);
 	new = old == 0 ? 1 : 0;
@@ -287,7 +288,34 @@ static int cpu_8994_set_rate(struct clk_hw *hw, unsigned long rate,
 	if (old >= 0)
 		cpu_8994_pll_disable(c, old);
 
+
 	return 0;
+}
+
+static void cpu_8994_wake(void *unused)
+{
+}
+
+static int cpu_8994_set_rate(struct clk_hw *hw, unsigned long rate,
+			     unsigned long parent_rate)
+{
+	struct cpu_8994_cluster *c = to_cluster(hw);
+	unsigned int div;
+	int ret;
+	u32 l;
+
+	if (cpu_8994_config(rate, parent_rate, &l, &div) != rate)
+		return -EINVAL;
+
+	/* Keep the cluster's cores out of power collapse across the switch */
+	cpu_latency_qos_add_request(&c->qos, 0);
+	on_each_cpu_mask(&c->cpus, cpu_8994_wake, NULL, true);
+
+	ret = cpu_8994_switch(c, l, div);
+
+	cpu_latency_qos_remove_request(&c->qos);
+
+	return ret;
 }
 
 static const struct clk_ops cpu_8994_ops = {
@@ -305,6 +333,30 @@ static const struct regmap_config cpu_8994_regmap_config = {
 };
 
 static const char * const cpu_8994_names[] = { "a53_clk", "a57_clk" };
+
+/* The CPUs whose clock is the cluster clock with index @idx */
+static void cpu_8994_get_cpus(struct device *dev, unsigned int idx,
+			      struct cpumask *cpus)
+{
+	struct of_phandle_args args;
+	unsigned int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct device_node *np = of_cpu_device_node_get(cpu);
+
+		if (!np)
+			continue;
+
+		if (!of_parse_phandle_with_args(np, "clocks", "#clock-cells",
+						0, &args)) {
+			if (args.np == dev->of_node && args.args_count == 1 &&
+			    args.args[0] == idx)
+				cpumask_set_cpu(cpu, cpus);
+			of_node_put(args.np);
+		}
+		of_node_put(np);
+	}
+}
 
 static int cpu_8994_probe(struct platform_device *pdev)
 {
@@ -368,12 +420,14 @@ static int cpu_8994_probe(struct platform_device *pdev)
 			return dev_err_probe(dev, n, "%s is not on a PLL\n",
 					     cpu_8994_names[i]);
 		regmap_read(c->pll, PLL_USER_CTL(n), &c->user_ctl);
+		cpu_8994_get_cpus(dev, i, &c->cpus);
 
 		c->hw.init = &init;
 		ret = devm_clk_hw_register(dev, &c->hw);
 		if (ret)
 			return ret;
 		data->hws[i] = &c->hw;
+
 	}
 
 	return devm_of_clk_add_hw_provider(dev, of_clk_hw_onecell_get, data);
