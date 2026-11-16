@@ -1246,6 +1246,9 @@ static const struct cpr_fuse *cpr_get_fuses(struct cpr_drv *drv)
 			return ERR_PTR(-ENOMEM);
 
 		snprintf(tbuf, 32, "cpr_quotient_offset%d", i + 1);
+		if (of_property_match_string(drv->dev->of_node,
+					     "nvmem-cell-names", tbuf) < 0)
+			continue;
 		fuses[i].quotient_offset = devm_kstrdup(drv->dev, tbuf,
 							GFP_KERNEL);
 		if (!fuses[i].quotient_offset)
@@ -1610,14 +1613,16 @@ static int cpr_probe(struct platform_device *pdev)
 	drv->desc = data->cpr_desc;
 	drv->acc_desc = data->acc_desc;
 
-	np = of_parse_phandle(dev->of_node, "acc-syscon", 0);
-	if (!np)
-		return -ENODEV;
+	if (drv->acc_desc->settings) {
+		np = of_parse_phandle(dev->of_node, "acc-syscon", 0);
+		if (!np)
+			return -ENODEV;
 
-	drv->tcsr = syscon_node_to_regmap(np);
-	of_node_put(np);
-	if (IS_ERR(drv->tcsr))
-		return PTR_ERR(drv->tcsr);
+		drv->tcsr = syscon_node_to_regmap(np);
+		of_node_put(np);
+		if (IS_ERR(drv->tcsr))
+			return PTR_ERR(drv->tcsr);
+	}
 
 	drv->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(drv->base))
@@ -1638,9 +1643,13 @@ static int cpr_probe(struct platform_device *pdev)
 	 * initialized after attaching to the power domain,
 	 * since it depends on the CPU's OPP table.
 	 */
-	ret = nvmem_cell_read_variable_le_u32(dev, "cpr_fuse_revision", &cpr_rev);
-	if (ret)
-		return ret;
+	if (of_property_match_string(dev->of_node, "nvmem-cell-names",
+				     "cpr_fuse_revision") >= 0) {
+		ret = nvmem_cell_read_variable_le_u32(dev, "cpr_fuse_revision",
+						      &cpr_rev);
+		if (ret)
+			return ret;
+	}
 
 	drv->cpr_fuses = cpr_get_fuses(drv);
 	if (IS_ERR(drv->cpr_fuses))
