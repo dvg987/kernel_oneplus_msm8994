@@ -56,6 +56,9 @@ struct mdp5_kms {
 	struct clk *tbu_rt_clk;
 	struct clk *vsync_clk;
 
+	/* scanout and rotator paths to memory */
+	struct icc_path *path[3];
+
 	/*
 	 * lock to protect access to global resources: ie., following register:
 	 *	- REG_MDP5_DISP_INTF_SEL

@@ -233,12 +233,22 @@ static const struct mdp_kms_funcs kms_funcs = {
 	.set_irqmask         = mdp5_set_irqmask,
 };
 
+static void mdp5_set_bw(struct mdp5_kms *mdp5_kms, u32 peak)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mdp5_kms->path); i++)
+		icc_set_bw(mdp5_kms->path[i], 0, peak);
+}
+
 static int mdp5_disable(struct mdp5_kms *mdp5_kms)
 {
 	DBG("");
 
 	mdp5_kms->enable_count--;
 	WARN_ON(mdp5_kms->enable_count < 0);
+
+	mdp5_set_bw(mdp5_kms, 0);
 
 	clk_disable_unprepare(mdp5_kms->tbu_rt_clk);
 	clk_disable_unprepare(mdp5_kms->tbu_clk);
@@ -262,6 +272,8 @@ static int mdp5_enable(struct mdp5_kms *mdp5_kms)
 	clk_prepare_enable(mdp5_kms->lut_clk);
 	clk_prepare_enable(mdp5_kms->tbu_clk);
 	clk_prepare_enable(mdp5_kms->tbu_rt_clk);
+
+	mdp5_set_bw(mdp5_kms, MBps_to_icc(6400));
 
 	return 0;
 }
@@ -798,7 +810,8 @@ fail:
 	return ret;
 }
 
-static int mdp5_setup_interconnect(struct platform_device *pdev)
+static int mdp5_setup_interconnect(struct mdp5_kms *mdp5_kms,
+				   struct platform_device *pdev)
 {
 	struct icc_path *path0 = msm_icc_get(&pdev->dev, "mdp0-mem");
 	struct icc_path *path1 = msm_icc_get(&pdev->dev, "mdp1-mem");
@@ -818,12 +831,12 @@ static int mdp5_setup_interconnect(struct platform_device *pdev)
 		return 0;
 	}
 
-	icc_set_bw(path0, 0, MBps_to_icc(6400));
-
-	if (!IS_ERR_OR_NULL(path1))
-		icc_set_bw(path1, 0, MBps_to_icc(6400));
-	if (!IS_ERR_OR_NULL(path_rot))
-		icc_set_bw(path_rot, 0, MBps_to_icc(6400));
+	/* Voted for while the MDP is resumed, from mdp5_enable() */
+	mdp5_kms->path[0] = path0;
+	if (!IS_ERR(path1))
+		mdp5_kms->path[1] = path1;
+	if (!IS_ERR(path_rot))
+		mdp5_kms->path[2] = path_rot;
 
 	return 0;
 }
@@ -842,7 +855,7 @@ static int mdp5_dev_probe(struct platform_device *pdev)
 	if (!mdp5_kms)
 		return -ENOMEM;
 
-	ret = mdp5_setup_interconnect(pdev);
+	ret = mdp5_setup_interconnect(mdp5_kms, pdev);
 	if (ret)
 		return ret;
 
