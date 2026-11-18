@@ -1633,6 +1633,16 @@
 	firmware-name = "qcom/msm8994/oneplus/oneplus2/adsp.mbn";
 };
 
+&mss_pil {
+	firmware-name = "qcom/msm8994/oneplus/oneplus2/mba.mbn",
+			"qcom/msm8994/oneplus/oneplus2/modem.mdt";
+
+	mss-supply = <&vreg_s7a_1p0>;
+	pll-supply = <&vreg_l12a_1p8>;
+
+	status = "okay";
+};
+
 &blsp2_i2c5 {
 	/* stock runs this bus at 100 kHz */
 	clock-frequency = <100000>;
