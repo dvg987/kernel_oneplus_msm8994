@@ -1666,6 +1666,14 @@
 	firmware-name = "qcom/msm8994/oneplus/oneplus2/adsp.mbn";
 };
 
+&ipa {
+	status = "okay";
+};
+
+&ipa_bam {
+	status = "okay";
+};
+
 &mss_pil {
 	firmware-name = "qcom/msm8994/oneplus/oneplus2/mba.mbn",
 			"qcom/msm8994/oneplus/oneplus2/modem.mdt";
