@@ -200,6 +200,9 @@ struct dma_vec {
  *  transaction is marked with DMA_PREP_REPEAT will cause the new transaction
  *  to never be processed and stay in the issued queue forever. The flag is
  *  ignored if the previous transaction is not a repeated transaction.
+ * @DMA_PREP_IMM_CMD: tell the driver that the data passed to the DMA API is an
+ *  immediate command for the peripheral at the other end of the channel. How
+ *  the command is encoded in the descriptor is DMA controller specific.
  */
 enum dma_ctrl_flags {
 	DMA_PREP_INTERRUPT = (1 << 0),
@@ -212,6 +215,7 @@ enum dma_ctrl_flags {
 	DMA_PREP_CMD = (1 << 7),
 	DMA_PREP_REPEAT = (1 << 8),
 	DMA_PREP_LOAD_EOT = (1 << 9),
+	DMA_PREP_IMM_CMD = (1 << 10),
 };
 
 /**

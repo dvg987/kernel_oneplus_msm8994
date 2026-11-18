@@ -633,6 +633,16 @@ DMA_CTRL_REUSE
   - This flag is only supported if the channel reports the DMA_LOAD_EOT
     capability.
 
+- DMA_PREP_IMM_CMD
+
+  - If set, the client driver tells the DMA controller that the passed data
+    is an immediate command for the peripheral at the other end of the
+    channel, rather than data to be transferred.
+
+  - Unlike DMA_PREP_CMD, which describes commands the DMA controller itself
+    executes, an immediate command is consumed by the peripheral. How it is
+    encoded in the descriptor is DMA controller specific.
+
 General Design Notes
 ====================
 
