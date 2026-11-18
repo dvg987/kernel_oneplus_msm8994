@@ -1486,6 +1486,40 @@
 			#hwlock-cells = <1>;
 		};
 
+		ipa_bam: dma-controller@fd4c4000 {
+			compatible = "qcom,bam-v1.4.0";
+			reg = <0xfd4c4000 0x15820>;
+			interrupts = <GIC_SPI 300 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&rpmcc RPM_SMD_IPA_CLK>;
+			clock-names = "bam_clk";
+			#dma-cells = <1>;
+			qcom,ee = <2>;
+			qcom,config-bits = <0xffffe004>;
+			status = "disabled";
+		};
+
+		ipa: ipa@fd4e0000 {
+			compatible = "qcom,msm8994-ipa";
+			reg = <0xfd4e0000 0x5000>,
+			      <0xfd4e5000 0x2000>;
+			reg-names = "ipa-reg",
+				    "ipa-shared";
+			interrupts = <GIC_SPI 301 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "ipa";
+			clocks = <&rpmcc RPM_SMD_IPA_CLK>;
+			clock-names = "core";
+			interconnects = <&snoc SNOC_MAS_IPA &bimc BIMC_SLV_EBI_CH0>,
+					<&snoc SNOC_MAS_IPA &snoc SNOC_SLV_OCIMEM>;
+			interconnect-names = "memory",
+					     "imem";
+			dmas = <&ipa_bam 2>, <&ipa_bam 3>, <&ipa_bam 4>, <&ipa_bam 5>;
+			dma-names = "ap_lan_rx",
+				    "cmd_tx",
+				    "ap_modem_tx",
+				    "ap_modem_rx";
+			status = "disabled";
+		};
+
 		tlmm: pinctrl@fd510000 {
 			compatible = "qcom,msm8994-pinctrl";
 			reg = <0xfd510000 0x4000>;
