@@ -160,6 +160,7 @@
 #define GCC_BOOT_ROM_AHB_CLK		150
 #define GCC_PRNG_AHB_CLK			151
 #define GCC_USB3_PHY_PIPE_CLK		152
+#define GCC_MSS_CFG_AHB_CLK		153
 
 /* GDSCs */
 #define PCIE_GDSC			0
