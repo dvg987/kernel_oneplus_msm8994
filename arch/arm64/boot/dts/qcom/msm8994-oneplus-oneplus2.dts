@@ -638,48 +638,68 @@
 			min-residency-us = <3000>;
 			local-timer-stop;
 		};
+
+		little_cluster_pc: cluster-power-collapse-0 {
+			compatible = "arm,idle-state";
+			idle-state-name = "little-cluster-power-collapse";
+			arm,psci-suspend-param = <0x01010004>;
+			entry-latency-us = <500>;
+			exit-latency-us = <800>;
+			min-residency-us = <5000>;
+			local-timer-stop;
+		};
+
+		big_cluster_pc: cluster-power-collapse-1 {
+			compatible = "arm,idle-state";
+			idle-state-name = "big-cluster-power-collapse";
+			arm,psci-suspend-param = <0x01010004>;
+			entry-latency-us = <600>;
+			exit-latency-us = <1260>;
+			min-residency-us = <8000>;
+			local-timer-stop;
+		};
 	};
 };
 
 /* Per-CPU ACC (power control) that lk2nd uses to start the cores */
 &cpu0 {
 	qcom,acc = <&cpu0_acc>;
-	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc &little_cluster_pc>;
 };
 
 &cpu1 {
 	qcom,acc = <&cpu1_acc>;
-	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc &little_cluster_pc>;
 };
 
 &cpu2 {
 	qcom,acc = <&cpu2_acc>;
-	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc &little_cluster_pc>;
 };
 
 &cpu3 {
 	qcom,acc = <&cpu3_acc>;
-	cpu-idle-states = <&little_cpu_ret &little_cpu_pc>;
+	cpu-idle-states = <&little_cpu_ret &little_cpu_pc &little_cluster_pc>;
 };
 
 &cpu4 {
 	qcom,acc = <&cpu4_acc>;
-	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc &big_cluster_pc>;
 };
 
 &cpu5 {
 	qcom,acc = <&cpu5_acc>;
-	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc &big_cluster_pc>;
 };
 
 &cpu6 {
 	qcom,acc = <&cpu6_acc>;
-	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc &big_cluster_pc>;
 };
 
 &cpu7 {
 	qcom,acc = <&cpu7_acc>;
-	cpu-idle-states = <&big_cpu_ret &big_cpu_pc>;
+	cpu-idle-states = <&big_cpu_ret &big_cpu_pc &big_cluster_pc>;
 };
 
 &soc {
