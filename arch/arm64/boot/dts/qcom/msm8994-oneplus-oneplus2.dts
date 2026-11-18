@@ -748,7 +748,7 @@
 	debug@fb810000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfb810000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu0>;
 	};
@@ -756,7 +756,7 @@
 	debug@fb910000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfb910000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu1>;
 	};
@@ -764,7 +764,7 @@
 	debug@fba10000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfba10000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu2>;
 	};
@@ -772,7 +772,7 @@
 	debug@fbb10000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfbb10000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu3>;
 	};
@@ -780,7 +780,7 @@
 	debug@fbc10000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfbc10000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu4>;
 	};
@@ -788,7 +788,7 @@
 	debug@fbd10000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfbd10000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu5>;
 	};
@@ -796,7 +796,7 @@
 	debug@fbe10000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfbe10000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu6>;
 	};
@@ -804,7 +804,7 @@
 	debug@fbf10000 {
 		compatible = "arm,coresight-cpu-debug", "arm,primecell";
 		reg = <0xfbf10000 0x1000>;
-		clocks = <&rpmcc RPM_SMD_QDSS_CLK>;
+		clocks = <&rpmcc RPM_SMD_QDSS_A_CLK>;
 		clock-names = "apb_pclk";
 		cpu = <&cpu7>;
 	};
