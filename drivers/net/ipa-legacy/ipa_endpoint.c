@@ -1501,7 +1501,10 @@ int ipa_endpoint_enable_one(struct ipa_endpoint *endpoint)
 	u32 endpoint_id = endpoint->endpoint_id;
 	struct ipa *ipa = endpoint->ipa;
 
-	if (!endpoint->toward_ipa) {
+	if (endpoint->toward_ipa) {
+		ipa_endpoint_program_delay(endpoint, false);
+	} else {
+		(void)ipa_endpoint_program_suspend(endpoint, false);
 		ipa_interrupt_suspend_enable(ipa->interrupt, endpoint_id);
 		ipa_endpoint_replenish_enable(endpoint);
 	}
@@ -1523,9 +1526,13 @@ void ipa_endpoint_disable_one(struct ipa_endpoint *endpoint)
 
 	__clear_bit(endpoint_id, endpoint->ipa->enabled);
 
-	if (!endpoint->toward_ipa) {
+	/* Keep the IPA off the channel while its descriptors are dropped */
+	if (endpoint->toward_ipa) {
+		ipa_endpoint_program_delay(endpoint, true);
+	} else {
 		ipa_endpoint_replenish_disable(endpoint);
 		ipa_interrupt_suspend_disable(ipa->interrupt, endpoint_id);
+		(void)ipa_endpoint_program_suspend(endpoint, true);
 	}
 
 	/* Note that if stop fails, the channel's state is not well-defined */

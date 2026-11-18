@@ -288,21 +288,22 @@ static int bam_channel_start(struct ipa_dma *ipa_dma, u32 channel_id)
 static int bam_channel_stop(struct ipa_dma *ipa_dma, u32 channel_id)
 {
 	struct ipa_dma_channel *channel = &ipa_dma->channel[channel_id];
+	int ret;
 
-	return dmaengine_terminate_sync(channel->dma_chan);
-}
-
-static void bam_channel_reset(struct ipa_dma *ipa_dma, u32 channel_id, bool doorbell)
-{
-	struct ipa_dma_channel *channel = &ipa_dma->channel[channel_id];
-
-	bam_channel_stop(ipa_dma, channel_id);
+	ret = dmaengine_terminate_sync(channel->dma_chan);
 
 	/* The dmaengine frees the descriptors it terminates without
 	 * completing them; hand the affected transactions back to NAPI so
 	 * their buffers and transaction resources are released.
 	 */
 	ipa_dma_channel_trans_cancel_pending(channel);
+
+	return ret;
+}
+
+static void bam_channel_reset(struct ipa_dma *ipa_dma, u32 channel_id, bool doorbell)
+{
+	bam_channel_stop(ipa_dma, channel_id);
 }
 
 static int bam_channel_suspend(struct ipa_dma *ipa_dma, u32 channel_id)
