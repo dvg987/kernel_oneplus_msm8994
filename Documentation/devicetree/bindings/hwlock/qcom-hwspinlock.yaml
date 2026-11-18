@@ -29,6 +29,7 @@ properties:
       - items:
           - enum:
               - qcom,msm8974-tcsr-mutex
+              - qcom,msm8994-tcsr-mutex
           - const: qcom,tcsr-mutex
           - const: syscon
 
