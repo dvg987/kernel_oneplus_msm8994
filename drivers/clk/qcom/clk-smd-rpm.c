@@ -166,6 +166,7 @@ struct clk_smd_rpm {
 	const bool active_only;
 	bool enabled;
 	bool branch;
+	bool handed_off;
 	struct clk_smd_rpm *peer;
 	struct clk_hw hw;
 	unsigned long rate;
@@ -263,6 +264,9 @@ static int clk_smd_rpm_prepare(struct clk_hw *hw)
 	int ret = 0;
 
 	mutex_lock(&rpm_smd_clk_lock);
+
+	/* A consumer owns the votes from here on */
+	r->handed_off = false;
 
 	/* Don't send requests to the RPM if the rate has not been set. */
 	if (!r->rate)
@@ -412,17 +416,55 @@ static int clk_smd_rpm_enable_scaling(void)
 	return 0;
 }
 
+static int clk_smd_rpm_is_prepared(struct clk_hw *hw);
+static void clk_smd_rpm_unprepare_unused(struct clk_hw *hw);
+
 static const struct clk_ops clk_smd_rpm_ops = {
 	.prepare	= clk_smd_rpm_prepare,
 	.unprepare	= clk_smd_rpm_unprepare,
+	.is_prepared	= clk_smd_rpm_is_prepared,
+	.unprepare_unused = clk_smd_rpm_unprepare_unused,
 	.set_rate	= clk_smd_rpm_set_rate,
 	.determine_rate = clk_determine_rate_noop,
 	.recalc_rate	= clk_smd_rpm_recalc_rate,
 };
 
+static int clk_smd_rpm_is_prepared(struct clk_hw *hw)
+{
+	struct clk_smd_rpm *r = to_clk_smd_rpm(hw);
+
+	return r->enabled || r->handed_off;
+}
+
+static void clk_smd_rpm_unprepare_unused(struct clk_hw *hw)
+{
+	struct clk_smd_rpm *r = to_clk_smd_rpm(hw);
+
+	if (!r->handed_off)
+		return;
+
+	r->handed_off = false;
+
+	/* Nothing needs an unused XO buffer, awake or asleep */
+	if (r->rpm_res_type == QCOM_SMD_RPM_CLK_BUF_A) {
+		clk_smd_rpm_unprepare(hw);
+		return;
+	}
+
+	/*
+	 * Other resources may be in use without a clock consumer, so keep
+	 * the active set vote of the handoff and only drop it from the
+	 * sleep set.
+	 */
+	if (!r->active_only)
+		clk_smd_rpm_set_rate_sleep(r, 0);
+}
+
 static const struct clk_ops clk_smd_rpm_branch_ops = {
 	.prepare	= clk_smd_rpm_prepare,
 	.unprepare	= clk_smd_rpm_unprepare,
+	.is_prepared	= clk_smd_rpm_is_prepared,
+	.unprepare_unused = clk_smd_rpm_unprepare_unused,
 	.recalc_rate	= clk_smd_rpm_recalc_rate,
 };
 
@@ -1365,6 +1407,17 @@ static int rpm_smd_clk_probe(struct platform_device *pdev)
 		ret = clk_smd_rpm_handoff(rpm_smd_clks[i]);
 		if (ret)
 			goto err;
+
+		/*
+		 * The handoff votes every clock on in the sleep set too, and
+		 * a clock left on there keeps XO running through system
+		 * sleep. Let clk_disable_unused() take back the votes of the
+		 * clocks nothing claims. XO buffer pin control stays, as that
+		 * is how the RF transceivers ask for their buffers.
+		 */
+		if (rpm_smd_clks[i]->rpm_key != QCOM_RPM_KEY_PIN_CTRL_CLK_BUFFER_ENABLE_KEY &&
+		    !(rpm_smd_clks[i]->hw.init->flags & CLK_IS_CRITICAL))
+			rpm_smd_clks[i]->handed_off = true;
 	}
 
 	for (i = 0; i < desc->num_icc_clks; i++) {
