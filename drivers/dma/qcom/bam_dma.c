@@ -76,7 +76,30 @@ struct bam_async_desc {
 	struct list_head desc_node;
 	enum dma_transfer_direction dir;
 	size_t length;
+
+	/* client buffer receiving the number of bytes received */
+	void *metadata;
+	u32 rx_len;
+
 	struct bam_desc_hw desc[] __counted_by(num_desc);
+};
+
+static int bam_attach_metadata(struct dma_async_tx_descriptor *desc,
+			       void *data, size_t len)
+{
+	struct bam_async_desc *async_desc =
+		container_of(desc, struct bam_async_desc, vd.tx);
+
+	if (len < sizeof(u32))
+		return -EINVAL;
+
+	async_desc->metadata = data;
+
+	return 0;
+}
+
+static const struct dma_descriptor_metadata_ops bam_metadata_ops = {
+	.attach = bam_attach_metadata,
 };
 
 enum bam_reg {
@@ -705,6 +728,8 @@ static struct dma_async_tx_descriptor *bam_prep_slave_sg(struct dma_chan *chan,
 	async_desc->num_desc = num_alloc;
 	async_desc->curr_desc = async_desc->desc;
 	async_desc->dir = direction;
+	if (direction == DMA_DEV_TO_MEM)
+		async_desc->vd.tx.metadata_ops = &bam_metadata_ops;
 
 	/* fill in temporary descriptors */
 	desc = async_desc->desc;
@@ -837,6 +862,27 @@ static int bam_resume(struct dma_chan *chan)
 	return 0;
 }
 
+/*
+ * On a receive pipe the BAM writes the number of bytes it actually placed in
+ * each buffer back into the size field of the descriptor.  Add those up for
+ * the descriptors just completed and hand the total to the client.
+ */
+static void bam_record_rx_len(struct bam_chan *bchan,
+			      struct bam_async_desc *async_desc)
+{
+	struct bam_desc_hw *fifo = PTR_ALIGN(bchan->fifo_virt,
+					     sizeof(struct bam_desc_hw));
+	u32 i;
+
+	for (i = 0; i < async_desc->xfer_len; i++) {
+		u32 index = (bchan->head + i) % MAX_DESCRIPTORS;
+
+		async_desc->rx_len += le16_to_cpu(fifo[index].size);
+	}
+
+	*(u32 *)async_desc->metadata = async_desc->rx_len;
+}
+
 /**
  * process_channel_irqs - processes the channel interrupts
  * @bdev: bam controller
@@ -883,6 +929,9 @@ static u32 process_channel_irqs(struct bam_device *bdev)
 			/* Not enough data to read */
 			if (avail < async_desc->xfer_len)
 				break;
+
+			if (async_desc->metadata)
+				bam_record_rx_len(bchan, async_desc);
 
 			/* manage FIFO */
 			bchan->head += async_desc->xfer_len;
@@ -1353,6 +1402,7 @@ static int bam_dma_probe(struct platform_device *pdev)
 	/* initialize dmaengine apis */
 	bdev->common.directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
 	bdev->common.residue_granularity = DMA_RESIDUE_GRANULARITY_SEGMENT;
+	bdev->common.desc_metadata_modes = DESC_METADATA_CLIENT;
 	bdev->common.src_addr_widths = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	bdev->common.dst_addr_widths = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	bdev->common.device_alloc_chan_resources = bam_alloc_chan;
