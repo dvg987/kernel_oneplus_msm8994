@@ -560,19 +560,22 @@
 	/*
 	 * Also the HS PHY clocks, which the vendor PHY driver held: no
 	 * mainline driver claims them and they would be turned off as unused.
+	 * The HS PHY reference is the LN_BB XO buffer, as on stock.
 	 */
 	clocks = <&gcc GCC_USB30_MASTER_CLK>,
 		 <&gcc GCC_SYS_NOC_USB3_AXI_CLK>,
 		 <&gcc GCC_USB30_SLEEP_CLK>,
 		 <&gcc GCC_USB30_MOCK_UTMI_CLK>,
 		 <&gcc GCC_USB2_HS_PHY_SLEEP_CLK>,
-		 <&gcc GCC_USB_PHY_CFG_AHB2PHY_CLK>;
+		 <&gcc GCC_USB_PHY_CFG_AHB2PHY_CLK>,
+		 <&rpmcc RPM_SMD_LN_BB_CLK>;
 	clock-names = "core",
 		      "iface",
 		      "sleep",
 		      "mock_utmi",
 		      "phy_sleep",
-		      "phy_cfg_ahb";
+		      "phy_cfg_ahb",
+		      "phy_ref";
 	status = "okay";
 };
 
