@@ -27,6 +27,7 @@ properties:
           - qcom,msm8940-mss-pil
           - qcom,msm8953-mss-pil
           - qcom,msm8974-mss-pil
+          - qcom,msm8994-mss-pil
 
       - const: qcom,q6v5-pil
         description: Deprecated, prefer using qcom,msm8916-mss-pil
@@ -64,6 +65,9 @@ properties:
       - description: Configuration bus (AHB) clock
       - description: Boot ROM (AHB) clock
       - description: XO proxy clock (control handed over after startup)
+      - description: GPLL0 branch to the MSS
+                     (only valid for qcom,msm8994-mss-pil)
+    minItems: 4
 
   clock-names:
     items:
@@ -71,6 +75,8 @@ properties:
       - const: bus
       - const: mem
       - const: xo
+      - const: gpll0_mss # only valid for qcom,msm8994-mss-pil
+    minItems: 4
 
   power-domains:
     items:
@@ -241,6 +247,7 @@ allOf:
               - qcom,msm8917-mss-pil
               - qcom,msm8937-mss-pil
               - qcom,msm8940-mss-pil
+              - qcom,msm8994-mss-pil
     then:
       properties:
         power-domains:
@@ -270,6 +277,23 @@ allOf:
   - if:
       properties:
         compatible:
+          const: qcom,msm8994-mss-pil
+    then:
+      properties:
+        clocks:
+          minItems: 5
+        clock-names:
+          minItems: 5
+    else:
+      properties:
+        clocks:
+          maxItems: 4
+        clock-names:
+          maxItems: 4
+
+  - if:
+      properties:
+        compatible:
           const: qcom,msm8226-mss-pil
     then:
       required:
@@ -288,6 +312,7 @@ allOf:
               - qcom,msm8937-mss-pil
               - qcom,msm8940-mss-pil
               - qcom,msm8974-mss-pil
+              - qcom,msm8994-mss-pil
     then:
       required:
         - mss-supply
