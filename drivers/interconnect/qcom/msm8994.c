@@ -304,14 +304,6 @@ enum {
 	MSM8994_SNOC_SLV_PCIE_1,
 };
 
-static int msm8994_get_bw(struct icc_node *node, u32 *avg, u32 *peak)
-{
-	*avg = 0;
-	*peak = 0;
-
-	return 0;
-}
-
 static const u16 mas_ampss_m0_links[] = {
 	MSM8994_BIMC_SLV_EBI_CH0
 };
@@ -399,7 +391,6 @@ static const struct qcom_icc_desc msm8994_bimc = {
 	.nodes = msm8994_bimc_nodes,
 	.num_nodes = ARRAY_SIZE(msm8994_bimc_nodes),
 	.bus_clk_desc = &bimc_clk,
-	.get_bw = msm8994_get_bw,
 	.ignore_enxio = true,
 };
 
@@ -794,7 +785,6 @@ static const struct qcom_icc_desc msm8994_cnoc = {
 	.nodes = msm8994_cnoc_nodes,
 	.num_nodes = ARRAY_SIZE(msm8994_cnoc_nodes),
 	.bus_clk_desc = &bus_2_clk,
-	.get_bw = msm8994_get_bw,
 	.ignore_enxio = true,
 };
 
@@ -1098,7 +1088,6 @@ static struct qcom_icc_node * const msm8994_mnoc_nodes[] = {
 static const struct qcom_icc_desc msm8994_mnoc = {
 	.nodes = msm8994_mnoc_nodes,
 	.num_nodes = ARRAY_SIZE(msm8994_mnoc_nodes),
-	.get_bw = msm8994_get_bw,
 	.ignore_enxio = true,
 };
 
@@ -1203,7 +1192,6 @@ static const struct qcom_icc_desc msm8994_ovirt = {
 	.nodes = msm8994_ovirt_nodes,
 	.num_nodes = ARRAY_SIZE(msm8994_ovirt_nodes),
 	.bus_clk_desc = &gpu_mem_2_clk,
-	.get_bw = msm8994_get_bw,
 	.ignore_enxio = true,
 };
 
@@ -1485,7 +1473,6 @@ static const struct qcom_icc_desc msm8994_pnoc = {
 	.nodes = msm8994_pnoc_nodes,
 	.num_nodes = ARRAY_SIZE(msm8994_pnoc_nodes),
 	.bus_clk_desc = &bus_0_clk,
-	.get_bw = msm8994_get_bw,
 	.keep_alive = true,
 	.ignore_enxio = true,
 };
@@ -1817,7 +1804,6 @@ static const struct qcom_icc_desc msm8994_snoc = {
 	.nodes = msm8994_snoc_nodes,
 	.num_nodes = ARRAY_SIZE(msm8994_snoc_nodes),
 	.bus_clk_desc = &bus_1_clk,
-	.get_bw = msm8994_get_bw,
 	.ignore_enxio = true,
 };
 
