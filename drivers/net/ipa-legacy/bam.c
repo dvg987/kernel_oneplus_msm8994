@@ -38,27 +38,28 @@
 static int bam_channel_init_one(struct ipa_dma *ipa_dma,
 			 const struct ipa_dma_endpoint_data *data, bool command)
 {
-	struct dma_slave_config bam_config;
+	struct dma_slave_config bam_config = { };
 	u32 channel_id = data->channel_id;
 	struct ipa_dma_channel *channel = &ipa_dma->channel[channel_id];
+	struct dma_chan *dma_chan;
 	int ret;
 
+	dma_chan = dma_request_chan(ipa_dma->dev, data->channel_name);
+	if (IS_ERR(dma_chan))
+		return dev_err_probe(ipa_dma->dev, PTR_ERR(dma_chan),
+				     "failed to request BAM channel %s\n",
+				     data->channel_name);
+
 	channel->ipa_dma = ipa_dma;
-	channel->dma_chan = dma_request_chan(ipa_dma->dev, data->channel_name);
+	channel->dma_chan = dma_chan;
 	channel->toward_ipa = data->toward_ipa;
 	channel->command = command;
 	channel->trans_tre_max = data->channel.tlv_count;
 	channel->tre_count = data->channel.tre_count;
-	if (IS_ERR(channel->dma_chan)) {
-		dev_err(ipa_dma->dev, "failed to request BAM channel %s: %d\n",
-				data->channel_name,
-				(int) PTR_ERR(channel->dma_chan));
-		return PTR_ERR(channel->dma_chan);
-	}
 
-	ret = ipa_dma_channel_trans_init(ipa_dma, data->channel_id);
+	ret = ipa_dma_channel_trans_init(ipa_dma, channel_id);
 	if (ret)
-		goto err_dma_chan_free;
+		goto err_release_chan;
 
 	if (data->toward_ipa) {
 		bam_config.direction = DMA_MEM_TO_DEV;
@@ -68,58 +69,42 @@ static int bam_channel_init_one(struct ipa_dma *ipa_dma,
 		bam_config.src_maxburst = channel->trans_tre_max;
 	}
 
-	dmaengine_slave_config(channel->dma_chan, &bam_config);
+	ret = dmaengine_slave_config(dma_chan, &bam_config);
+	if (ret)
+		goto err_trans_exit;
 
 	if (command) {
-		u32 tre_max = ipa_dma_channel_tre_max(ipa_dma, data->channel_id);
+		u32 tre_max = ipa_dma_channel_tre_max(ipa_dma, channel_id);
 
 		ret = ipa_cmd_pool_init(channel, tre_max);
+		if (ret)
+			goto err_trans_exit;
 	}
 
-	if (!ret)
-		return 0;
+	return 0;
 
-err_dma_chan_free:
-	dma_release_channel(channel->dma_chan);
+err_trans_exit:
+	ipa_dma_channel_trans_exit(channel);
+err_release_chan:
+	dma_release_channel(dma_chan);
+	channel->dma_chan = NULL;
+	channel->ipa_dma = NULL;
+
 	return ret;
 }
 
 static void bam_channel_exit_one(struct ipa_dma_channel *channel)
 {
-	if (channel->dma_chan) {
-		dmaengine_terminate_sync(channel->dma_chan);
-		dma_release_channel(channel->dma_chan);
-	}
-}
+	if (!channel->dma_chan)
+		return;		/* Ignore uninitialized channels */
 
-/* Get channels from BAM_DMA */
-static int bam_channel_init(struct ipa_dma *ipa_dma, u32 count,
-		const struct ipa_dma_endpoint_data *data)
-{
-	int ret = 0;
-	u32 i;
-
-	for (i = 0; i < count; ++i) {
-		bool command = i == IPA_ENDPOINT_AP_COMMAND_TX;
-
-		if (!data[i].channel_name || data[i].ee_id == IPA_EE_MODEM)
-			continue;
-
-		ret = bam_channel_init_one(ipa_dma, &data[i], command);
-		if (ret)
-			goto err_unwind;
-	}
-
-	return ret;
-
-err_unwind:
-	while (i--) {
-		if (ipa_dma_endpoint_data_empty(&data[i]))
-			continue;
-
-		bam_channel_exit_one(&ipa_dma->channel[i]);
-	}
-	return ret;
+	dmaengine_terminate_sync(channel->dma_chan);
+	if (channel->command)
+		ipa_cmd_pool_exit(channel);
+	ipa_dma_channel_trans_exit(channel);
+	dma_release_channel(channel->dma_chan);
+	channel->dma_chan = NULL;
+	channel->ipa_dma = NULL;
 }
 
 /* Inverse of bam_channel_init() */
@@ -132,11 +117,42 @@ static void bam_channel_exit(struct ipa_dma *ipa_dma)
 	while (channel_id--);
 }
 
+/* Get channels from BAM_DMA */
+static int bam_channel_init(struct ipa_dma *ipa_dma, u32 count,
+		const struct ipa_dma_endpoint_data *data)
+{
+	u32 i;
+
+	for (i = 0; i < count; ++i) {
+		bool command = i == IPA_ENDPOINT_AP_COMMAND_TX;
+		int ret;
+
+		if (!data[i].channel_name || data[i].ee_id == IPA_EE_MODEM)
+			continue;
+
+		if (data[i].channel_id >= BAM_CHANNEL_COUNT_MAX) {
+			dev_err(ipa_dma->dev, "BAM channel %u out of range\n",
+				data[i].channel_id);
+			ret = -EINVAL;
+		} else {
+			ret = bam_channel_init_one(ipa_dma, &data[i], command);
+		}
+		if (ret) {
+			bam_channel_exit(ipa_dma);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 /* Inverse of bam_init() */
 static void bam_exit(struct ipa_dma *ipa_dma)
 {
-	mutex_destroy(&ipa_dma->mutex);
 	bam_channel_exit(ipa_dma);
+	free_netdev(ipa_dma->dummy_dev);
+	ipa_dma->dummy_dev = NULL;
+	mutex_destroy(&ipa_dma->mutex);
 }
 
 /**
@@ -221,6 +237,7 @@ static void bam_channel_teardown_one(struct ipa_dma *ipa_dma, u32 channel_id)
 	if (!channel->ipa_dma)
 		return;		/* Ignore uninitialized channels */
 
+	napi_disable(&channel->napi);
 	netif_napi_del(&channel->napi);
 }
 
@@ -242,11 +259,10 @@ static int bam_channel_setup(struct ipa_dma *ipa_dma)
 /* Inverse of bam_channel_setup() */
 static void bam_channel_teardown(struct ipa_dma *ipa_dma)
 {
-	u32 channel_id;
+	u32 channel_id = BAM_CHANNEL_COUNT_MAX - 1;
 
 	mutex_lock(&ipa_dma->mutex);
 
-	channel_id = BAM_CHANNEL_COUNT_MAX;
 	do
 		bam_channel_teardown_one(ipa_dma, channel_id);
 	while (channel_id--);
@@ -372,19 +388,31 @@ static void bam_trans_commit(struct ipa_dma_trans *trans, bool unused)
 
 		desc = dmaengine_prep_slave_single(channel->dma_chan, addr, len,
 				direction, dma_flags);
+		if (!desc) {
+			/* The rest of the transaction is not submitted; it
+			 * is retired when a later one on the channel
+			 * completes.
+			 */
+			dev_err_ratelimited(trans->ipa_dma->dev,
+					    "BAM channel %u: no descriptor\n",
+					    trans->channel_id);
+			trans->cancelled = true;
+			break;
+		}
 
 		if (last_tre) {
 			desc->callback = bam_trans_callback;
 			desc->callback_param = trans;
 		}
 
+		if (direction == DMA_DEV_TO_MEM)
+			dmaengine_desc_attach_metadata(desc, &trans->len,
+						       sizeof(trans->len));
+
 		desc->cookie = dmaengine_submit(desc);
 
 		if (last_tre)
 			trans->cookie = desc->cookie;
-
-		if (direction == DMA_DEV_TO_MEM)
-			dmaengine_desc_attach_metadata(desc, &trans->len, sizeof(trans->len));
 	}
 
 	ipa_dma_trans_move_pending(trans);
@@ -420,13 +448,16 @@ static int bam_init(struct ipa_dma *ipa_dma, struct platform_device *pdev,
 	if (!ipa_dma->dummy_dev)
 		return -ENOMEM;
 
-	ret = bam_channel_init(ipa_dma, count, data);
-	if (ret)
-		return ret;
-
 	mutex_init(&ipa_dma->mutex);
 
-	return 0;
+	ret = bam_channel_init(ipa_dma, count, data);
+	if (ret) {
+		mutex_destroy(&ipa_dma->mutex);
+		free_netdev(ipa_dma->dummy_dev);
+		ipa_dma->dummy_dev = NULL;
+	}
+
+	return ret;
 }
 
 struct ipa_dma_ops bam_ops = {
