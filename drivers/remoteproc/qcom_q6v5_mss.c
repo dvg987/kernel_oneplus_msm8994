@@ -269,6 +269,7 @@ enum {
 	MSS_MSM8940,
 	MSS_MSM8953,
 	MSS_MSM8974,
+	MSS_MSM8994,
 	MSS_MSM8996,
 	MSS_MSM8998,
 	MSS_SC7180,
@@ -760,6 +761,7 @@ static int q6v5proc_reset(struct q6v5 *qproc)
 		   qproc->version == MSS_MSM8937 ||
 		   qproc->version == MSS_MSM8940 ||
 		   qproc->version == MSS_MSM8953 ||
+		   qproc->version == MSS_MSM8994 ||
 		   qproc->version == MSS_MSM8996 ||
 		   qproc->version == MSS_MSM8998 ||
 		   qproc->version == MSS_SDM660) {
@@ -816,7 +818,8 @@ static int q6v5proc_reset(struct q6v5 *qproc)
 		val |= QDSP6v56_LDO_BYP;
 		writel(val, qproc->reg_base + QDSP6SS_PWR_CTL_REG);
 
-		if (qproc->version != MSS_MSM8909) {
+		if (qproc->version != MSS_MSM8909 &&
+		    qproc->version != MSS_MSM8994) {
 			int mem_pwr_ctl;
 			int reverse;
 
@@ -889,6 +892,12 @@ static int q6v5proc_reset(struct q6v5 *qproc)
 		val = readl(qproc->reg_base + QDSP6SS_PWR_CTL_REG);
 		val &= ~QDSP6v56_CLAMP_WL;
 		writel(val, qproc->reg_base + QDSP6SS_PWR_CTL_REG);
+
+		/* MSM8994 keeps the QDSP6 compiler memory clamp until here */
+		if (qproc->version == MSS_MSM8994) {
+			val &= ~QDSP6v56_CLAMP_QMC_MEM;
+			writel(val, qproc->reg_base + QDSP6SS_PWR_CTL_REG);
+		}
 	} else {
 		/* Assert resets, stop core */
 		val = readl(qproc->reg_base + QDSP6SS_RESET_REG);
@@ -2413,6 +2422,52 @@ static const struct rproc_hexagon_res msm8998_mss = {
 	.ssctl_id = 0x12,
 };
 
+static const struct rproc_hexagon_res msm8994_mss = {
+	.hexagon_mba_image = "mba.mbn",
+	.proxy_supply = (struct qcom_mss_reg_res[]) {
+		{
+			.supply = "pll",
+			.uA = 100000,
+		},
+		{}
+	},
+	.active_supply = (struct qcom_mss_reg_res[]) {
+		{
+			.supply = "mss",
+			.uV = 1000000,
+			.uA = 100000,
+		},
+		{}
+	},
+	.proxy_clk_names = (char*[]){
+		"xo",
+		NULL
+	},
+	.active_clk_names = (char*[]){
+		"iface",
+		"bus",
+		"mem",
+		"gpll0_mss",
+		NULL
+	},
+	.proxy_pd_names = (char*[]){
+		"cx",
+		"mx",
+		NULL
+	},
+	.need_mem_protection = false,
+	.need_pas_mem_setup = false,
+	.has_alt_reset = false,
+	.has_mba_logs = false,
+	.has_spare_reg = false,
+	.has_qaccept_regs = false,
+	.has_ext_bhs_reg = false,
+	.has_ext_cntl_regs = false,
+	.has_vq6 = false,
+	.version = MSS_MSM8994,
+	.ssctl_id = 0x12,
+};
+
 static const struct rproc_hexagon_res msm8996_mss = {
 	.hexagon_mba_image = "mba.mbn",
 	.proxy_supply = (struct qcom_mss_reg_res[]) {
@@ -2903,6 +2958,7 @@ static const struct of_device_id q6v5_of_match[] = {
 	{ .compatible = "qcom,msm8940-mss-pil", .data = &msm8940_mss },
 	{ .compatible = "qcom,msm8953-mss-pil", .data = &msm8953_mss },
 	{ .compatible = "qcom,msm8974-mss-pil", .data = &msm8974_mss },
+	{ .compatible = "qcom,msm8994-mss-pil", .data = &msm8994_mss },
 	{ .compatible = "qcom,msm8996-mss-pil", .data = &msm8996_mss },
 	{ .compatible = "qcom,msm8998-mss-pil", .data = &msm8998_mss },
 	{ .compatible = "qcom,sc7180-mss-pil", .data = &sc7180_mss },
