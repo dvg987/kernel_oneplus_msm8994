@@ -441,6 +441,8 @@ struct bam_device {
 
 	/* execution environment ID, from DT */
 	u32 ee;
+	/* value programmed into BAM_CNFG_BITS on reset */
+	u32 cnfg_bits;
 	bool controlled_remotely;
 	bool powered_remotely;
 	u32 active_channels;
@@ -498,8 +500,11 @@ static void bam_reset(struct bam_device *bdev)
 	writel_relaxed(DEFAULT_CNT_THRSHLD,
 			bam_addr(bdev, 0, BAM_DESC_CNT_TRSHLD));
 
-	/* Enable default set of h/w workarounds, ie all except BAM_FULL_PIPE */
-	writel_relaxed(BAM_CNFG_BITS_DEFAULT, bam_addr(bdev, 0, BAM_CNFG_BITS));
+	/*
+	 * Enable the h/w workarounds: by default all except BAM_FULL_PIPE,
+	 * unless DT asks for a different set
+	 */
+	writel_relaxed(bdev->cnfg_bits, bam_addr(bdev, 0, BAM_CNFG_BITS));
 
 	/* enable irqs for errors */
 	writel_relaxed(BAM_ERROR_EN | BAM_HRESP_ERR_EN,
@@ -1328,6 +1333,10 @@ static int bam_dma_probe(struct platform_device *pdev)
 		dev_err(bdev->dev, "Execution environment unspecified\n");
 		return ret;
 	}
+
+	bdev->cnfg_bits = BAM_CNFG_BITS_DEFAULT;
+	of_property_read_u32(pdev->dev.of_node, "qcom,config-bits",
+			     &bdev->cnfg_bits);
 
 	bdev->controlled_remotely = of_property_read_bool(pdev->dev.of_node,
 						"qcom,controlled-remotely");
