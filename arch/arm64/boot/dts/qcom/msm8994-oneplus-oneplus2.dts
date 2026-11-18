@@ -1602,6 +1602,14 @@
 			};
 		};
 
+		cs-voice-dai-link {
+			link-name = "CS-Voice";
+
+			cpu {
+				sound-dai = <&q6voicedai>;
+			};
+		};
+
 		speaker-dai-link {
 			link-name = "Speaker";
 
