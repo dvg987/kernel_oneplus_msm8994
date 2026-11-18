@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2014 The Linux Foundation. All rights reserved.
  */
+#include <dt-bindings/interconnect/qcom,rpm-icc.h>
+
 #include "a4xx_gpu.h"
 #include <linux/iopoll.h>
 
@@ -741,6 +743,7 @@ static struct msm_gpu *a4xx_gpu_init(struct drm_device *dev)
 	/* Voted for while the GPU is resumed, from a4xx_pm_resume() */
 	a4xx_gpu->icc_path = icc_path;
 	/* The A430 renders nothing after a resume without this vote */
+	icc_set_tag(ocmem_icc_path, RPM_ACTIVE_TAG);
 	icc_set_bw(ocmem_icc_path, 0, Bps_to_icc(gpu->fast_rate) * 8);
 
 	return gpu;
