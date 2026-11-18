@@ -81,6 +81,15 @@ properties:
       Indicates that the bam is powered up by a remote processor but must be
       initialized by the local processor.
 
+  qcom,config-bits:
+    maxItems: 1
+    description:
+      Value to program into the BAM_CNFG_BITS register when the BAM is reset,
+      in place of the driver default. Used where the remote side of the BAM
+      depends on a specific configuration, such as the BAM in front of the
+      IPA v2.0 on MSM8994, which the modem firmware expects to be configured
+      with 0xffffe004.
+
   reg:
     maxItems: 1
 
