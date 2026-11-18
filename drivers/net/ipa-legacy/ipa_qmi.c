@@ -490,6 +490,12 @@ static u8 *ipa_qmi_rule_add(const struct ipa_qmi_filter_rule *rule, u8 *chain)
  * The uplink chains the modem's rules are built into live at bytes 256
  * and 2048.
  */
+#define IPA_QMI_UL_V4_CHAIN	256
+#define IPA_QMI_UL_V6_CHAIN	2048
+
+/* Largest hardware rule ipa_qmi_rule_add() can produce, in bytes */
+#define IPA_QMI_RULE_SIZE_MAX	180
+
 #define IPA_QMI_DL_V4_RT_WORD	16	/* bytes 64..71 */
 #define IPA_QMI_DL_V6_RT_WORD	40	/* bytes 160..167 */
 
@@ -521,11 +527,14 @@ static void ipa_server_install_filter_rule(struct qmi_handle *qmi,
 	if (count) {
 		u8 *chain[2] = { NULL, NULL };	/* IPv4, IPv6 */
 		u8 *next[2];
+		u8 *end[2];
 
-		next[0] = (u8 *)ipa->rule_virt + 256;
-		next[1] = (u8 *)ipa->rule_virt + 2048;
+		next[0] = (u8 *)ipa->rule_virt + IPA_QMI_UL_V4_CHAIN;
+		next[1] = (u8 *)ipa->rule_virt + IPA_QMI_UL_V6_CHAIN;
 		chain[0] = next[0];
 		chain[1] = next[1];
+		end[0] = (u8 *)ipa->rule_virt + IPA_QMI_UL_V6_CHAIN;
+		end[1] = (u8 *)ipa->rule_virt + ipa->rule_size;
 
 		for (i = 0; i < count; i++) {
 			const struct ipa_qmi_filter_rule *rule =
@@ -535,6 +544,15 @@ static void ipa_server_install_filter_rule(struct qmi_handle *qmi,
 			if (ip_type > 1)
 				continue;	/* unknown IP type */
 
+			/* Leave room for the largest rule and the terminator */
+			if (end[ip_type] - next[ip_type] <
+			    IPA_QMI_RULE_SIZE_MAX + sizeof(u32)) {
+				dev_err_ratelimited(&ipa->pdev->dev,
+						    "no room for uplink filter rule %u\n",
+						    i);
+				continue;
+			}
+
 			next[ip_type] = ipa_qmi_rule_add(rule, next[ip_type]);
 		}
 
@@ -542,7 +560,8 @@ static void ipa_server_install_filter_rule(struct qmi_handle *qmi,
 			bool ipv6 = i == 1;
 			u32 endpoint_id;
 
-			*next[i] = 0;		/* rule list terminator */
+			/* A zero rule header ends the rule list */
+			put_unaligned_le32(0, next[i]);
 
 			if (next[i] == chain[i])
 				continue;	/* no rules of this type */
@@ -619,6 +638,9 @@ static void ipa_server_install_filter_rule(struct qmi_handle *qmi,
 	rsp.rsp.error = QMI_ERR_NONE_V01;
 	rsp.filter_handle_list_valid = 1;
 	rsp.filter_handle_list_len = count;
+
+	/* A notification for an earlier request may still be in flight */
+	flush_work(&ipa_qmi->fltr_installed_notif_work);
 
 	/* Tell the modem its rules are installed.  The vendor does the same
 	 * right after installing them, and the modem's rmnet-meta state
