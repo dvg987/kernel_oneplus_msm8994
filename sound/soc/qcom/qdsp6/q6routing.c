@@ -386,31 +386,13 @@ static struct msm_routing_data *routing_data;
  *
  * Return: Will be an negative on error or a zero on success.
  */
-int q6routing_stream_open(int fedai_id, int perf_mode,
-			   int stream_id, int stream_type)
+/* Open a COPP on the session's port and map the stream to it; lock held */
+static int q6routing_session_map(struct session_data *session, int stream_id)
 {
-	int j, topology, num_copps = 0;
+	struct session_data *pdata = &routing_data->port_data[session->port_id];
 	struct route_payload payload;
 	struct q6copp *copp;
-	int copp_idx;
-	struct session_data *session, *pdata;
-
-	if (!routing_data) {
-		pr_err("Routing driver not yet ready\n");
-		return -EINVAL;
-	}
-
-	session = &routing_data->sessions[stream_id - 1];
-	if (session->port_id < 0) {
-		dev_err(routing_data->dev, "Routing not setup for MultiMedia%d Session\n",
-			session->fedai_id);
-		return -EINVAL;
-	}
-
-	pdata = &routing_data->port_data[session->port_id];
-
-	mutex_lock(&routing_data->lock);
-	session->fedai_id = fedai_id;
+	int j, copp_idx, num_copps = 0;
 
 	session->path_type = pdata->path_type;
 	session->sample_rate = pdata->sample_rate;
@@ -418,16 +400,12 @@ int q6routing_stream_open(int fedai_id, int perf_mode,
 	session->bits_per_sample = pdata->bits_per_sample;
 
 	payload.num_copps = 0; /* only RX needs to use payload */
-	topology = NULL_COPP_TOPOLOGY;
 	copp = q6adm_open(routing_data->dev, session->port_id,
-			      session->path_type, session->sample_rate,
-			      session->channels, topology, perf_mode,
-			      session->bits_per_sample, 0, 0);
-
-	if (IS_ERR_OR_NULL(copp)) {
-		mutex_unlock(&routing_data->lock);
+			  session->path_type, session->sample_rate,
+			  session->channels, NULL_COPP_TOPOLOGY,
+			  session->perf_mode, session->bits_per_sample, 0, 0);
+	if (IS_ERR_OR_NULL(copp))
 		return -EINVAL;
-	}
 
 	copp_idx = q6adm_get_copp_id(copp);
 	set_bit(copp_idx, &session->copp_map);
@@ -443,11 +421,51 @@ int q6routing_stream_open(int fedai_id, int perf_mode,
 		payload.num_copps = num_copps;
 		payload.session_id = stream_id;
 		q6adm_matrix_map(routing_data->dev, session->path_type,
-				 payload, perf_mode);
+				 payload, session->perf_mode);
 	}
-	mutex_unlock(&routing_data->lock);
 
 	return 0;
+}
+
+/* Close the COPPs of a session; lock held */
+static void q6routing_session_unmap(struct session_data *session)
+{
+	int idx;
+
+	for_each_set_bit(idx, &session->copp_map, MAX_COPPS_PER_PORT) {
+		if (session->copps[idx]) {
+			q6adm_close(routing_data->dev, session->copps[idx]);
+			session->copps[idx] = NULL;
+		}
+	}
+	session->copp_map = 0;
+}
+
+int q6routing_stream_open(int fedai_id, int perf_mode,
+			   int stream_id, int stream_type)
+{
+	struct session_data *session;
+	int ret;
+
+	if (!routing_data) {
+		pr_err("Routing driver not yet ready\n");
+		return -EINVAL;
+	}
+
+	session = &routing_data->sessions[stream_id - 1];
+	if (session->port_id < 0) {
+		dev_err(routing_data->dev, "Routing not setup for MultiMedia%d Session\n",
+			session->fedai_id);
+		return -EINVAL;
+	}
+
+	mutex_lock(&routing_data->lock);
+	session->fedai_id = fedai_id;
+	session->perf_mode = perf_mode;
+	ret = q6routing_session_map(session, stream_id);
+	mutex_unlock(&routing_data->lock);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(q6routing_stream_open);
 
@@ -475,21 +493,15 @@ static struct session_data *get_session_from_id(struct msm_routing_data *data,
 void q6routing_stream_close(int fedai_id, int stream_type)
 {
 	struct session_data *session;
-	int idx;
 
 	session = get_session_from_id(routing_data, fedai_id);
 	if (!session)
 		return;
 
-	for_each_set_bit(idx, &session->copp_map, MAX_COPPS_PER_PORT) {
-		if (session->copps[idx]) {
-			q6adm_close(routing_data->dev, session->copps[idx]);
-			session->copps[idx] = NULL;
-		}
-	}
-
+	mutex_lock(&routing_data->lock);
+	q6routing_session_unmap(session);
 	session->fedai_id = -1;
-	session->copp_map = 0;
+	mutex_unlock(&routing_data->lock);
 }
 EXPORT_SYMBOL_GPL(q6routing_stream_close);
 
@@ -525,16 +537,39 @@ static int msm_routing_put_audio_mixer(struct snd_kcontrol *kcontrol,
 	int session_id = mc->shift;
 	struct session_data *session = &data->sessions[session_id];
 
+	bool running = session->fedai_id != -1;
+
 	if (ucontrol->value.integer.value[0]) {
 		if (session->port_id == be_id)
 			return 0;
 
+		/*
+		 * A running stream keeps the COPPs it opened: move it to the
+		 * new port, once DPCM has set the new back end up.
+		 */
+		if (running) {
+			mutex_lock(&data->lock);
+			q6routing_session_unmap(session);
+			mutex_unlock(&data->lock);
+		}
 		session->port_id = be_id;
 		snd_soc_dapm_mixer_update_power(dapm, kcontrol, 1, update);
+		if (running) {
+			mutex_lock(&data->lock);
+			if (q6routing_session_map(session, session_id + 1))
+				dev_err(c->dev, "failed to route MultiMedia%d to port %d\n",
+					session_id + 1, be_id);
+			mutex_unlock(&data->lock);
+		}
 	} else {
 		if (session->port_id == -1 || session->port_id != be_id)
 			return 0;
 
+		if (running) {
+			mutex_lock(&data->lock);
+			q6routing_session_unmap(session);
+			mutex_unlock(&data->lock);
+		}
 		session->port_id = -1;
 		snd_soc_dapm_mixer_update_power(dapm, kcontrol, 0, update);
 	}
